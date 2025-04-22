@@ -1,0 +1,51 @@
+{
+  "_schemaVersion": "1.0.0",
+  "logplus":
+  {
+     "inputs":
+     [
+        {"name":"A", "kind":"required", "type":["numeric"], "purpose":"Input\nscalar | matrix | vector"},
+        {"name":"B", "kind":"required", "type":["numeric"], "purpose":"Input\nscalar | matrix | vector"}
+     ]
+  },
+  "logminus":
+  {
+     "inputs":
+     [
+        {"name":"A", "kind":"required", "type":["numeric"], "purpose":"Input\nscalar | matrix | vector"},
+        {"name":"B", "kind":"required", "type":["numeric"], "purpose":"Input\nscalar | matrix | vector"}
+     ]
+  },
+  "logmultiply":
+  {
+     "inputs":
+     [
+        {"name":"A", "kind":"required", "type":["numeric"], "purpose":"Input\nscalar | matrix | vector"},
+        {"name":"B", "kind":"required", "type":["numeric"], "purpose":"Input\nscalar | matrix | vector"}
+     ]
+  },
+  "logmean":
+  {
+     "inputs":
+     [
+        {"name":"A", "kind":"required", "type":["numeric"], "purpose":"Input\nmatrix | vector"},
+        {"name":"dim", "kind":"ordered", "type":["scalar","char","choices={'all'}"], "purpose":"Mean direction"}
+     ]
+  },
+ "logsum":
+  {
+     "inputs":
+     [
+        {"name":"A", "kind":"required", "type":["numeric"], "purpose":"Input\nmatrix | vector"},
+        {"name":"dim", "kind":"ordered", "type":["scalar","char","choices={'all'}"], "purpose":"Summation direction"}
+     ]
+  },
+  "logcumsum":
+  {
+     "inputs":
+     [
+        {"name":"A", "kind":"required", "type":["numeric"], "purpose":"Input\nmatrix | vector"},
+        {"name":"dim", "kind":"ordered", "type":["scalar"], "purpose":"Summation direction"}
+     ]
+  }
+}
