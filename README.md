@@ -8,3 +8,7 @@ To execute the algorithm, simply run either:
 
 The main implementation is contained in the file:
 1. SuS_Bay_Nataf.m  % Core function implementing the algorithm
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
