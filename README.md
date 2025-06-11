@@ -7,4 +7,4 @@ To execute the algorithm, simply run either:
 2. drive_posterior  % For posterior sampling
 
 The main implementation is contained in the file:
-SuS_Bay_Nataf.m  % Core function implementing the algorithm
+1. SuS_Bay_Nataf.m  % Core function implementing the algorithm
