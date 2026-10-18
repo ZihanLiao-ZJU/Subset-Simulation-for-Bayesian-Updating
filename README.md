@@ -2,7 +2,8 @@
 
 MATLAB implementation of subset simulation (SuS) for Bayesian evidence estimation and posterior sampling, using a Nataf transformation to work in standard normal space. This code accompanies the paper:
 
-> **From Likelihood to Limit State: A Reliability-Inspired Framework for Bayesian Evidence Estimation and High-dimensional Sampling.**
+> **From likelihood to limit state: A reliability-inspired framework for Bayesian evidence estimation and high-dimensional sampling.**
+> *Mechanical Systems and Signal Processing*, 237 (2025) 112969. doi: [10.1016/j.ymssp.2025.112969](https://doi.org/10.1016/j.ymssp.2025.112969)
 
 ## Contents
 
@@ -11,6 +12,7 @@ MATLAB implementation of subset simulation (SuS) for Bayesian evidence estimatio
 - [Repository structure](#repository-structure)
 - [Quick start](#quick-start)
 - [Benchmark likelihoods](#benchmark-likelihoods)
+- [Custom likelihood](#custom-likelihood)
 - [Outputs](#outputs)
 - [Citation](#citation)
 - [License](#license)
@@ -71,7 +73,48 @@ Both drivers use 1000 samples per level. `drive_evidence` runs 500 repetitions w
 | `LKF_nD_GaussianLogGamma.m` | Gaussian + LogGamma mixture (skewed), uniform prior on [−30, 30]ⁿ | n | −8.19 (n = 2), −20.47 (n = 5), −40.94 (n = 10), −81.89 (n = 20), −122.82 (n = 30) |
 | `LKF_2D_Eggbox.m` | eggbox (multimodal), uniform prior on [0, 10π]² | 2 | 235.856 |
 
-The reference values are listed in the header of each file. A custom problem can be defined by writing a class with the same interface: a prior `Pdis` (a `Nataf` object), the dimension `Ndim`, and a method `EvlLKF(theta)` returning the log-likelihood of samples `theta` (`Ndim × Nsam`).
+The reference values are listed in the header of each file. To solve your own problem, see [Custom likelihood](#custom-likelihood).
+
+## Custom likelihood
+
+Any user-defined Bayesian updating problem can be solved by writing a likelihood class with the same interface as the files in `Likelihood-functions/` and passing it to the driver in place of the benchmark. The algorithm only accesses the following members:
+
+| Member | Type | Description |
+|---|---|---|
+| `Ndim` | scalar | number of uncertain parameters |
+| `Pdis` | `Nataf` object | prior distribution, built as `Nataf(Marg_X, Rho_X)` from a column array of MATLAB distribution objects (`makedist`) and their correlation matrix |
+| `EvlLKF(obj, theta)` | method | log-likelihood of the samples `theta` (`Ndim × Nsam`, in the physical parameter space); must return a `1 × Nsam` row vector |
+
+The sampler works in standard normal space and maps samples to the parameter space through `Pdis.U2X` before calling `EvlLKF`, so the likelihood is written directly in terms of the physical parameters. `EvlLKF` is called with many samples at once and must return the **logarithm** of the likelihood.
+
+Minimal example: two parameters with independent standard normal priors and a Gaussian likelihood for two noisy observations. Save it as `MyLikelihood.m` in a folder on the MATLAB path (e.g. `Likelihood-functions/`):
+
+```matlab
+classdef MyLikelihood
+    properties
+        Ndim = 2;
+        Pdis = Nataf(repmat(makedist("Normal","mu",0,"sigma",1),2,1), eye(2));
+    end
+
+    methods
+        function logL = EvlLKF(~, theta)
+            % theta : [Ndim x Nsam] parameter samples
+            % logL  : [1 x Nsam] log-likelihood
+            y_obs = [1.0; -0.5];   % observed data
+            sigma = 0.2;           % measurement noise standard deviation
+            logL = -0.5*sum((theta - y_obs).^2, 1)/sigma^2 - numel(y_obs)*log(sqrt(2*pi)*sigma);
+        end
+    end
+end
+```
+
+Then, in `drive_evidence.m` or `drive_posterior.m`, replace the benchmark with your class:
+
+```matlab
+Tfun = MyLikelihood;
+```
+
+The rest of the driver is unchanged.
 
 ## Outputs
 
@@ -99,7 +142,19 @@ During each run, the progress of every level is printed (sample size, number of 
 
 If you use this code in your research, please cite:
 
-> From Likelihood to Limit State: A Reliability-Inspired Framework for Bayesian Evidence Estimation and High-dimensional Sampling.
+> Liao, Z., Li, B., & Wan, H.-P. (2025). From likelihood to limit state: A reliability-inspired framework for Bayesian evidence estimation and high-dimensional sampling. *Mechanical Systems and Signal Processing*, 237, 112969. https://doi.org/10.1016/j.ymssp.2025.112969
+
+```bibtex
+@article{liao2025likelihood,
+  title   = {From likelihood to limit state: A reliability-inspired framework for {B}ayesian evidence estimation and high-dimensional sampling},
+  author  = {Liao, Zihan and Li, Binbin and Wan, Hua-Ping},
+  journal = {Mechanical Systems and Signal Processing},
+  volume  = {237},
+  pages   = {112969},
+  year    = {2025},
+  doi     = {10.1016/j.ymssp.2025.112969}
+}
+```
 
 ## License
 
