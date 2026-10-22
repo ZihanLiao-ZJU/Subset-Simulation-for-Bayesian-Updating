@@ -19,6 +19,24 @@ MATLAB implementation of subset simulation (SuS) for Bayesian evidence estimatio
 
 ## Overview
 
+Given observed data $D$ and uncertain parameters $\theta$, Bayesian updating follows Bayes' theorem:
+
+$$
+p(\theta \mid D)
+= \frac{p(D \mid \theta)\,p(\theta)}{p(D)},
+\qquad
+Z = p(D) = \int p(D \mid \theta)\,p(\theta)\,\mathrm{d}\theta.
+$$
+
+Here, $p(\theta)$ is the **prior distribution**, $p(D \mid \theta)$ is the **likelihood**, $p(\theta \mid D)$ is the **posterior distribution**, and $Z = p(D)$ is the **Bayesian evidence (marginal likelihood)** that normalizes the posterior.
+
+The toolbox provides two main outputs:
+
+1. an **evidence (marginal likelihood) estimate** $\widehat{Z}$, computed and reported in the natural-log domain as $\log \widehat{Z}$ for numerical stability;
+2. **posterior distribution samples**, which give a Monte Carlo approximation to $p(\theta \mid D)$.
+
+The evidence is an estimate, not an exact integral. Posterior samples are obtained by resampling MCMC-generated samples; they may be repeated or dependent and should not be treated as exact independent draws.
+
 The Bayesian updating problem is reformulated in the spirit of a structural reliability problem: the likelihood plays the role of a limit-state function, and subset simulation generates samples from a sequence of nested likelihood levels, from the prior toward the high-likelihood region. Samples at each level are generated with adaptive conditional sampling (aCS) MCMC. The samples from all levels are then post-processed to
 
 - estimate the log-evidence, together with its coefficient of variation (CoV), with a correction for the correlation of Markov chain samples, and
@@ -85,7 +103,7 @@ Any user-defined Bayesian updating problem can be solved by writing a likelihood
 | `Pdis` | `Nataf` object | prior distribution, built as `Nataf(Marg_X, Rho_X)` from a column array of MATLAB distribution objects (`makedist`) and their correlation matrix |
 | `EvlLKF(obj, theta)` | method | log-likelihood of the samples `theta` (`Ndim × Nsam`, in the physical parameter space); must return a `1 × Nsam` row vector |
 
-The sampler works in standard normal space and maps samples to the parameter space through `Pdis.U2X` before calling `EvlLKF`, so the likelihood is written directly in terms of the physical parameters. `EvlLKF` is called with many samples at once and must return the **logarithm** of the likelihood.
+The sampler works in standard normal space and maps samples to the parameter space through `Pdis.U2X` before calling `EvlLKF`, so the likelihood is written directly in terms of the physical parameters. `EvlLKF` is called with many samples at once and must return the **logarithm** of the likelihood. Retain the likelihood normalization constants when estimating absolute evidence: omitting a parameter-independent factor leaves the normalized posterior unchanged but rescales the evidence.
 
 Minimal example: two parameters with independent standard normal priors and a Gaussian likelihood for two noisy observations. Save it as `MyLikelihood.m` in a folder on the MATLAB path (e.g. `Likelihood-functions/`):
 
@@ -117,6 +135,11 @@ Tfun = MyLikelihood;
 The rest of the driver is unchanged.
 
 ## Outputs
+
+The post-processing object `out_ps = NumSim(out_ss)` provides both outputs from a single subset simulation run:
+
+- **Evidence:** `out_ps.Z` is $\log \widehat{Z}$, the natural logarithm of the evidence estimate, despite the property name `Z`. `exp(out_ps.Z)` converts it to $\widehat{Z}$ when representable; keeping the log value avoids underflow or overflow.
+- **Posterior samples:** `[x_pos, y_pos] = out_ps.PosSim()` returns samples in standard normal space. `theta_pos = Tfun.Pdis.U2X(x_pos)` maps them to the physical parameter space, with one posterior sample per column.
 
 During each run, the progress of every level is printed (sample size, number of chains, samples per chain, likelihood evaluations). After all runs, the results are left in the workspace:
 
