@@ -18,7 +18,7 @@ classdef SuS_Bay_Nataf
     properties
         % G       : Parameters for intermediate likelihood function
         %           [L_i, p_i, L_i1, p_i1, z_i1, z_tmp1, z_sum1]
-        G = [-inf, 0, -inf, 0, -inf, -inf, -inf];
+        G = struct('parameters', [-inf, 0, -inf, 0, -inf, -inf, -inf], 'lambda', 0.6);
     end
 
     properties(Dependent)
@@ -53,7 +53,7 @@ classdef SuS_Bay_Nataf
             % Evaluate intermediate likelihood function (log indicator)
             y = obj.Y;
             L = y(1,:);
-            g = obj.G;
+            g = obj.G.parameters;
             L_i = g(3);
             if isinf(L_i)
                 Li = zeros(size(L));
@@ -74,7 +74,7 @@ classdef SuS_Bay_Nataf
             % INPUT:
             %   y : function values [4 × Nsam]
             %   p : target conditional probability
-            g = obj.G;
+            g = obj.G.parameters;
             L_i = g(3);
             p_i = g(4);
             z_i = g(5);
@@ -96,7 +96,8 @@ classdef SuS_Bay_Nataf
             z_sum1 = logplus(logplus(logminus(z_sum,z_tmp), z_i), z_tmp1);
 
             g = [L_i, p_i, L_i1, p_i1, z_i1, z_tmp1, z_sum1];
-            obj.G = g;
+            obj.G.parameters = g;
+            g = obj.G;
         end
 
         function [u_sed, y_sed] = SltSed(obj, u, y, Nsam)
@@ -104,7 +105,7 @@ classdef SuS_Bay_Nataf
             u = u(1:obj.Ndim,:);
             y = y(1:obj.Nfun,:);
             L = y(3,:);
-            g = obj.G;
+            g = obj.G.parameters;
             L_i1 = g(3);
             Ns = round(Nsam ./ (1:Nsam));
             Nsed = round(Nsam ./ Ns);
@@ -138,7 +139,7 @@ classdef SuS_Bay_Nataf
 
         function FlgCvg = get.FlgCvg(obj)
             % Compute convergence flag based on change in thresholds and evidence
-            g = obj.G;
+            g = obj.G.parameters;
             L_i = g(1);
             L_i1 = g(3);
             z_tmp = g(6);
@@ -153,3 +154,4 @@ classdef SuS_Bay_Nataf
         end
     end
 end
+

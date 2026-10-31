@@ -1,5 +1,7 @@
 %% Initialization and Settings
-clear;
+% Select CW_aMH, aCS, HMC, or ES; the original default is aCS.
+SamplerClass = @aCS;
+addpath(genpath(fileparts(mfilename('fullpath'))));
 
 % Simulation settings
 Nsam = 1000;         % Number of samples per iteration
@@ -16,7 +18,7 @@ Tfun = LKF_nD_GaussianShells(Ndim);    % Multimodal shell-shaped posterior
 %% Construct Sampler and Subset Simulation Framework
 % ----------------------------------------------------------------------
 IntBay = SuS_Bay_Nataf(Tfun);    % Define Bayesian model with Nataf transformation
-sampler = aCS(IntBay);           % Define adaptive MCMC sampler (e.g., aCS)
+sampler = SamplerClass(IntBay);           % Define adaptive MCMC sampler (e.g., aCS)
 ss = main(sampler);              % Main Subset Simulation object
 ss.NumSam = Nsam;                % Set sample size per level
 % ----------------------------------------------------------------------
@@ -39,3 +41,4 @@ logz_mu = mean(logz);                  % Mean log-evidence
 logz_sig = std(logz);                  % Std of log-evidence
 cv_logz = logz_sig / logz_mu;          % Coefficient of variation
 Ncal_mu = mean(Ncal);                  % Mean likelihood calls per run
+

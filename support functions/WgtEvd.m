@@ -11,12 +11,12 @@ for ite = 1:Nite
 end
 
 for ite = 1:Nite-1
-    Li = g{ite}(3);
-    Li1 = g{ite+1}(3);
+    Li = g{ite}.parameters(3);
+    Li1 = g{ite+1}.parameters(3);
     w_evd_tmp = min(logminus(y{ite}(3,:),Li),logminus(Li1,Li));
     w_evd{ite}(:) = w_evd_tmp(:);
 end
-Li = g{Nite}(3);
+Li = g{Nite}.parameters(3);
 w_evd_tmp = logminus(y{Nite}(3,:),Li);
 w_evd{Nite}(:) = w_evd_tmp(:);
 end

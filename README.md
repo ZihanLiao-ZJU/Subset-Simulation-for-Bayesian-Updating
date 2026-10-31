@@ -182,3 +182,32 @@ If you use this code in your research, please cite:
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](./LICENSE) for details.
+
+
+## Unified MCMC interface
+
+Each checkout contains all four interchangeable kernels: `CW_aMH`, `aCS`,
+`HMC`, and `ES`. Set `SamplerClass` in the MATLAB driver, or pass
+`--sampler CW_aMH|aCS|HMC|ES` to the Python driver. Existing default choices
+are retained (aCS for the standalone SuS toolbox, ES for SeMIS).
+
+All kernels use `BayStc` and return `(u, y, Ncal, BayStc)` from
+`SamGen(Nchains, Nsteps)` or `SamGen(u_seed, y_seed, Nsteps)`. Samples have
+shape `Ndim x Nchains x Nsteps`; packed outputs contain the intermediate
+log-likelihood factor, Gaussian log density, then cached model outputs.
+There is no two-dimensional restriction on the sampler interface.
+
+Intermediate state `G` is now a MATLAB struct / Python dict. The former
+numeric threshold vector is unchanged in order and stored in `G.parameters`
+(Python `G["parameters"]`). The aCS adaptation starts with sigma=1 and
+lambda=0.6; its final `G.lambda` is inherited by the next level, rather than
+reset. Prescribed legacy numeric threshold sequences are wrapped on input.
+
+ES uses coordinatewise initial angular brackets `[0, pi]`. HMC uses an
+analytic Gaussian rotation in Gaussian/Nataf coordinates, with a
+Metropolis correction for the intermediate likelihood factor. It is not
+a generic physical-space gradient HMC implementation.
+
+The unified kernels change some random trajectories, particularly the
+requested aCS initialization/state propagation. Smoke tests alone do not
+establish reproduction of all numerical results in the paper.

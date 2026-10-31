@@ -84,6 +84,10 @@ classdef main
             if flg_IntD
                 Nite_int = length(obj.G);
                 g(1:Nite_int) = obj.G;
+                for j=1:Nite_int
+                    if ~isstruct(g{j}), g{j}=struct('parameters',g{j},'lambda',0.6); end
+                end
+                intBay.G=g{1}; sampler.BayStc=intBay;
             else
                 Nite_int = 0;
                 g{1} = intBay.G;
@@ -94,16 +98,20 @@ classdef main
                 % === Sample Generation ===
                 if all(Nsze(ite,:) > 0) && ~isnan(Nsze(ite,2))
                     if ite == 1
-                        [x{ite}, y{ite}, Ncal(ite)] = sampler.SamGen(Nsze(ite,1), Nsze(ite,2));
+                        [x{ite}, y{ite}, Ncal(ite), intBay] = sampler.SamGen(Nsze(ite,1), Nsze(ite,2));
                     else
-                        [x{ite}, y{ite}, Ncal(ite)] = sampler.SamGen(x_sed, y_sed, Nsze(ite,2));
+                        [x{ite}, y{ite}, Ncal(ite), intBay] = sampler.SamGen(x_sed, y_sed, Nsze(ite,2));
                     end
                 end
                 Nsam(ite) = prod(Nsze(ite,:));
 
                 % === Update Intermediate Distribution ===
                 if ite + 1 <= Nite_int
+                    oldG = intBay.G;
                     intBay.G = g{ite+1};
+                    if isfield(oldG, 'lambda'), intBay.G.lambda = oldG.lambda; end
+                    if isfield(oldG, 'HMC_time'), intBay.G.HMC_time = oldG.HMC_time; end
+                    g{ite+1} = intBay.G;
                 else
                     [g{ite+1}, intBay] = intBay.UpdObj(y{ite}, p);
                 end
@@ -145,3 +153,4 @@ classdef main
         end
     end
 end
+
