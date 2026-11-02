@@ -1,172 +1,63 @@
-# Subset Simulation for Bayesian Updating
-
-MATLAB implementation of subset simulation (SuS) for Bayesian evidence estimation and posterior sampling, using a Nataf transformation to work in standard normal space. This code accompanies the paper:
-
-> **From likelihood to limit state: A reliability-inspired framework for Bayesian evidence estimation and high-dimensional sampling.**
-> *Mechanical Systems and Signal Processing*, 237 (2025) 112969. doi: [10.1016/j.ymssp.2025.112969](https://doi.org/10.1016/j.ymssp.2025.112969)
-
-## Contents
-
-- [Overview](#overview)
-- [Requirements](#requirements)
-- [Repository structure](#repository-structure)
-- [Quick start](#quick-start)
-- [Benchmark likelihoods](#benchmark-likelihoods)
-- [Custom likelihood](#custom-likelihood)
-- [Outputs](#outputs)
-- [Citation](#citation)
-- [License](#license)
+# Subset Simulation for Bayesian Updating — MATLAB
 
 ## Overview
+Estimates log Bayesian evidence and obtains weighted/resampled posterior samples using subset simulation in Nataf standard-normal space. The default sampler is aCS. Optional kernels do not mean every combination was evaluated in the cited paper.
 
-Given observed data $D$ and uncertain parameters $\theta$, Bayesian updating follows Bayes' theorem:
-
-$$
-p(\theta \mid D)
-= \frac{p(D \mid \theta)\,p(\theta)}{p(D)},
-\qquad
-Z = p(D) = \int p(D \mid \theta)\,p(\theta)\,\mathrm{d}\theta.
-$$
-
-Here, $p(\theta)$ is the **prior distribution**, $p(D \mid \theta)$ is the **likelihood**, $p(\theta \mid D)$ is the **posterior distribution**, and $Z = p(D)$ is the **Bayesian evidence (marginal likelihood)** that normalizes the posterior.
-
-The toolbox provides two main outputs:
-
-1. an **evidence (marginal likelihood) estimate** $\widehat{Z}$, computed and reported in the natural-log domain as $\log \widehat{Z}$ for numerical stability;
-2. **posterior distribution samples**, which give a Monte Carlo approximation to $p(\theta \mid D)$.
-
-The evidence is an estimate, not an exact integral. Posterior samples are obtained by resampling MCMC-generated samples; they may be repeated or dependent and should not be treated as exact independent draws.
-
-The Bayesian updating problem is reformulated in the spirit of a structural reliability problem: the likelihood plays the role of a limit-state function, and subset simulation generates samples from a sequence of nested likelihood levels, from the prior toward the high-likelihood region. Samples at each level are generated with adaptive conditional sampling (aCS) MCMC. The samples from all levels are then post-processed to
-
-- estimate the log-evidence, together with its coefficient of variation (CoV), with a correction for the correlation of Markov chain samples, and
-- obtain posterior samples by resampling.
-
-## Requirements
-
-- MATLAB
-- Statistics and Machine Learning Toolbox (`makedist` and probability distribution objects)
-
-## Repository structure
-
-```
-.
-├── drive_evidence.m                     % driver: log-evidence estimation over repeated runs
-├── drive_posterior.m                    % driver: posterior sampling and effective sample size
-├── SuS_Bay_Nataf.m                      % core: subset simulation for Bayesian updating (intermediate levels, seeds, convergence)
-├── main.m                               % sequential sampling loop (sample generation, level update, seed selection)
-├── NumSim.m                             % post-processing: evidence, posterior resampling, CoV estimates
-├── Nataf.m                              % Nataf transformation between physical and standard normal space
-├── MCMC-samplers/
-│   └── aCS.m                            % adaptive conditional sampling
-├── Likelihood-functions/                % benchmark likelihoods
-├── support functions/                   % thresholds, weights, CoV correction, plotting and other helpers
-├── Operations on Logarithmic values/    % log-domain arithmetic (logsum, logplus, logmean, ...)
-├── LICENSE
-└── README.md
-```
+## Structure
+- `drive_evidence.m` — repeated-run example driver.
+- `drive_posterior.m` — posterior samples and weight-ESS diagnostics.
+- `main.m` — sequential sampling loop.
+- `SuS_Bay_Nataf.m` — intermediate distributions, seeds and stopping conditions.
+- `NumSim.m` — evidence and posterior post-processing.
+- `Likelihood-functions/` — bundled likelihood/prior models.
+- `MCMC-samplers/` — four kernels and their shared `MCMCBase` protocol.
 
 ## Quick start
+Run from this repository's root. Each checkout contains its own helpers and does not require a sibling repository.
 
-1. Add the repository and all its subfolders to the MATLAB path, for example from the repository root:
+```matlab
+addpath(genpath(pwd));
+rng(1, 'twister');
+target = LKF_nD_GaussianShells(2);
+simulation = main(aCS(SuS_Bay_Nataf(target)));
+simulation.NumSam = 1000;
+out = simulation.RunIte();
+result = NumSim(out);
+logZ = result.Z;
+Ncal = sum(out.Ncal);
+terminal_converged = out.intBay.FlgCvg;
+```
 
-   ```matlab
-   >> addpath(genpath(pwd))
-   ```
+Inspect both the returned loop flag and `intBay.FlgCvg` (the intermediate model's terminal condition). A zero-seed exit can precede the terminal check; a finite evidence estimate alone is not proof of convergence. Likelihood calls are reported by `Ncal`, not by the number of posterior resamples.
 
-2. Run one of the drivers:
-
-   ```matlab
-   >> drive_evidence    % Bayesian evidence estimation
-   >> drive_posterior   % posterior sampling
-   ```
-
-Both drivers use 1000 samples per level. `drive_evidence` runs 500 repetitions with `Ndim = 5`, and `drive_posterior` runs 5 repetitions with `Ndim = 2`. To change the problem, edit `Ndim` and the `Tfun = ...` line in the *Define Likelihood Function* section of the driver.
-
-## Benchmark likelihoods
-
-| File | Description | Dimension | Reference log-evidence |
-|---|---|---|---|
-| `LKF_nD_GaussianShells.m` | two Gaussian shells (multimodal), uniform prior on [−6, 6]ⁿ | n | −1.75 (n = 2), −5.67 (n = 5), −14.59 (n = 10), −36.09 (n = 20), −60.13 (n = 30) |
-| `LKF_nD_GaussianLogGamma.m` | Gaussian + LogGamma mixture (skewed), uniform prior on [−30, 30]ⁿ | n | −8.19 (n = 2), −20.47 (n = 5), −40.94 (n = 10), −81.89 (n = 20), −122.82 (n = 30) |
-| `LKF_2D_Eggbox.m` | eggbox (multimodal), uniform prior on [0, 10π]² | 2 | 235.856 |
-
-The reference values are listed in the header of each file. To solve your own problem, see [Custom likelihood](#custom-likelihood).
-
-## Custom likelihood
-
-Any user-defined Bayesian updating problem can be solved by writing a likelihood class with the same interface as the files in `Likelihood-functions/` and passing it to the driver in place of the benchmark. The algorithm only accesses the following members:
-
-| Member | Type | Description |
+## Examples and samplers
+| Example | Model / dimension | Selector |
 |---|---|---|
-| `Ndim` | scalar | number of uncertain parameters |
-| `Pdis` | `Nataf` object | prior distribution, built as `Nataf(Marg_X, Rho_X)` from a column array of MATLAB distribution objects (`makedist`) and their correlation matrix |
-| `EvlLKF(obj, theta)` | method | log-likelihood of the samples `theta` (`Ndim × Nsam`, in the physical parameter space); must return a `1 × Nsam` row vector |
+| Eggbox | Two-dimensional multimodal likelihood | `LKF_2D_Eggbox()` |
+| GaussianShells | Dimension supplied by the caller | `LKF_nD_GaussianShells(Ndim)` |
+| GaussianLogGamma | Dimension supplied by the caller, at least 2 | `LKF_nD_GaussianLogGamma(Ndim)` |
 
-The sampler works in standard normal space and maps samples to the parameter space through `Pdis.U2X` before calling `EvlLKF`, so the likelihood is written directly in terms of the physical parameters. `EvlLKF` is called with many samples at once and must return the **logarithm** of the likelihood. Retain the likelihood normalization constants when estimating absolute evidence: omitting a parameter-independent factor leaves the normalized posterior unchanged but rescales the evidence.
+The existing drivers use GaussianShells and 1000 samples per level: `drive_evidence` uses dimension 5 and 500 repetitions; `drive_posterior` uses dimension 2 and 5 repetitions. The default conditional probability is 0.1. The quick start is a small usage example, not a paper-reproduction experiment.
 
-Minimal example: two parameters with independent standard normal priors and a Gaussian likelihood for two noisy observations. Save it as `MyLikelihood.m` in a folder on the MATLAB path (e.g. `Likelihood-functions/`):
+Available samplers are `CW_aMH`, `aCS`, `HMC`, and `ES`. Set `SamplerClass = @aCS` (or another listed kernel) in the driver, or replace the constructor in the example above.
 
-```matlab
-classdef MyLikelihood
-    properties
-        Ndim = 2;
-        Pdis = Nataf(repmat(makedist("Normal","mu",0,"sigma",1),2,1), eye(2));
-    end
+All kernels implement `SamGen(Nchains, Nsteps)` or `SamGen(U_seed, Y_seed, Nsteps)` and return samples, packed outputs, evaluation count and updated Bayesian state. Arrays use `Ndim × Nchains × Nsteps`; packed output rows are the intermediate log-likelihood factor, Gaussian log density and cached model outputs. Sampler dimensions are model-defined, not hard-coded to two.
 
-    methods
-        function logL = EvlLKF(~, theta)
-            % theta : [Ndim x Nsam] parameter samples
-            % logL  : [1 x Nsam] log-likelihood
-            y_obs = [1.0; -0.5];   % observed data
-            sigma = 0.2;           % measurement noise standard deviation
-            logL = -0.5*sum((theta - y_obs).^2, 1)/sigma^2 - numel(y_obs)*log(sqrt(2*pi)*sigma);
-        end
-    end
-end
-```
+## Dependencies
+MATLAB with Statistics and Machine Learning Toolbox (`makedist`, distribution objects and resampling). Focused MATLAB-source checks also used GNU Octave 9.4 with private compatibility adapters; that does not establish native MATLAB/toolbox equivalence or make those adapters a public dependency.
 
-Then, in `drive_evidence.m` or `drive_posterior.m`, replace the benchmark with your class:
+## Method & validation notes
+- **Implementation:** Intermediate thresholds, evidence/posterior formulas and model definitions are separate from the MCMC kernels. Numeric threshold vectors are stored in `G.parameters` (Python `G["parameters"]`); adaptation state occupies separate fields. The aCS `lambda` is a sampler scale, not the SeMIS intermediate-distribution threshold.
+- **Sampler policy:** aCS uses initial coordinate scale 1 and initial lambda 0.6, passing the final lambda to the next level. ES uses coordinatewise initial angles in `[0, pi]`. HMC uses analytic Gaussian-reference rotations with likelihood acceptance in Nataf space, not generic physical-space gradient integration.
+- **Outputs:** The primary evidence output is `NumSim.Z` (natural log). `EvlVar` estimates evidence uncertainty; the posterior driver computes evidence-correlation-adjusted weight ESS, not an ESS for every posterior coordinate. Resampled posterior draws may repeat or remain dependent.
+- **Validation scope:** Interface, same-seed trajectory and evaluation-accounting checks are not proof of agreement with all paper statistics. Historical aCS uses seed-based scales/reset adaptation, so the current policy can change termination and results. Stopping rules have not been relaxed to hide unsuccessful runs.
+- **History:** Historical MATLAB source and current sampler-state wiring are audited separately. This documentation cleanup does not change the estimator, examples or driver defaults.
 
-```matlab
-Tfun = MyLikelihood;
-```
 
-The rest of the driver is unchanged.
+- **Correlation scope:** Bundled examples use independent priors. The inherited MATLAB nonstandard-correlated-marginal branch references `GauIntPot`, which is not bundled; that branch is not independently runnable without the original helper. Python has its own quadrature implementation, but preserves the original positive-only search interval rather than extending negative-correlation support.
 
-## Outputs
-
-The post-processing object `out_ps = NumSim(out_ss)` provides both outputs from a single subset simulation run:
-
-- **Evidence:** `out_ps.Z` is $\log \widehat{Z}$, the natural logarithm of the evidence estimate, despite the property name `Z`. `exp(out_ps.Z)` converts it to $\widehat{Z}$ when representable; keeping the log value avoids underflow or overflow.
-- **Posterior samples:** `[x_pos, y_pos] = out_ps.PosSim()` returns samples in standard normal space. `theta_pos = Tfun.Pdis.U2X(x_pos)` maps them to the physical parameter space, with one posterior sample per column.
-
-During each run, the progress of every level is printed (sample size, number of chains, samples per chain, likelihood evaluations). After all runs, the results are left in the workspace:
-
-**`drive_evidence`**
-
-| Variable | Meaning |
-|---|---|
-| `logz` | estimated log-evidence of each run |
-| `logz_mu`, `logz_sig` | mean and standard deviation of the log-evidence |
-| `cv_logz` | coefficient of variation of the log-evidence |
-| `Ncal_mu` | average number of likelihood evaluations per run |
-
-**`drive_posterior`**
-
-| Variable | Meaning |
-|---|---|
-| `theta_pos` | posterior samples in the parameter space (last run) |
-| `Npos` | number of posterior samples of each run |
-| `Ness` | effective sample size of each run |
-| `Ness_rat_mu` | average effective sample size per likelihood evaluation |
-
-## Citation
-
-If you use this code in your research, please cite:
-
-> Liao, Z., Li, B., & Wan, H.-P. (2025). From likelihood to limit state: A reliability-inspired framework for Bayesian evidence estimation and high-dimensional sampling. *Mechanical Systems and Signal Processing*, 237, 112969. https://doi.org/10.1016/j.ymssp.2025.112969
-
+## Reference & license
+[Paper DOI: 10.1016/j.ymssp.2025.112969](https://doi.org/10.1016/j.ymssp.2025.112969)
 ```bibtex
 @article{liao2025likelihood,
   title   = {From likelihood to limit state: A reliability-inspired framework for {B}ayesian evidence estimation and high-dimensional sampling},
@@ -179,35 +70,4 @@ If you use this code in your research, please cite:
 }
 ```
 
-## License
-
-This project is licensed under the MIT License. See [LICENSE](./LICENSE) for details.
-
-
-## Unified MCMC interface
-
-Each checkout contains all four interchangeable kernels: `CW_aMH`, `aCS`,
-`HMC`, and `ES`. Set `SamplerClass` in the MATLAB driver, or pass
-`--sampler CW_aMH|aCS|HMC|ES` to the Python driver. Existing default choices
-are retained (aCS for the standalone SuS toolbox, ES for SeMIS).
-
-All kernels use `BayStc` and return `(u, y, Ncal, BayStc)` from
-`SamGen(Nchains, Nsteps)` or `SamGen(u_seed, y_seed, Nsteps)`. Samples have
-shape `Ndim x Nchains x Nsteps`; packed outputs contain the intermediate
-log-likelihood factor, Gaussian log density, then cached model outputs.
-There is no two-dimensional restriction on the sampler interface.
-
-Intermediate state `G` is now a MATLAB struct / Python dict. The former
-numeric threshold vector is unchanged in order and stored in `G.parameters`
-(Python `G["parameters"]`). The aCS adaptation starts with sigma=1 and
-lambda=0.6; its final `G.lambda` is inherited by the next level, rather than
-reset. Prescribed legacy numeric threshold sequences are wrapped on input.
-
-ES uses coordinatewise initial angular brackets `[0, pi]`. HMC uses an
-analytic Gaussian rotation in Gaussian/Nataf coordinates, with a
-Metropolis correction for the intermediate likelihood factor. It is not
-a generic physical-space gradient HMC implementation.
-
-The unified kernels change some random trajectories, particularly the
-requested aCS initialization/state propagation. Smoke tests alone do not
-establish reproduction of all numerical results in the paper.
+Licensed under the [MIT License](LICENSE); the original copyright notice is retained.
