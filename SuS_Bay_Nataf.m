@@ -162,70 +162,118 @@ classdef SuS_Bay_Nataf
     end
 
     methods
-        function options=sampler_options(obj,kernel)
-            spec=method_sampler_profile('sus_bayes',obj.MethodProfile);options=struct();
-            if isfield(spec.options,kernel),options=spec.options.(kernel);end
+
+        function options = sampler_options(obj, kernel)
+            spec = method_sampler_profile('sus_bayes', obj.MethodProfile);
+            options = struct();
+            if isfield(spec.options, kernel)
+                options = spec.options.(kernel);
+            end
         end
-        function defaults=run_defaults(obj)
-            defaults=struct('NumSam',1000,'ConPrb',0.1,'MaxIte',10000,'Verbose',true);
-            if isprop(obj,'Nsam'),defaults.NumSam=obj.Nsam;end
-            if isfield(obj.G,'p'),defaults.ConPrb=obj.G.p;end
+
+        function defaults = run_defaults(obj)
+            defaults = struct('NumSam', 1000, 'ConPrb', 0.1, 'MaxIte', 10000, 'Verbose', true);
+            if isprop(obj, 'Nsam')
+                defaults.NumSam = obj.Nsam;
+            end
+
+            if isfield(obj.G, 'p')
+                defaults.ConPrb = obj.G.p;
+            end
         end
-        function c=start_run(~,owner,sampler)
-            owner.IntBay.G.p=owner.ConPrb;
-            c=SeMCS.start_context(owner,sampler,max(1,owner.MaxIte-1),'overlay');
+
+        function context = start_run(~, owner, sampler)
+            owner.IntBay.G.p = owner.ConPrb;
+            context = SeMCS.start_context(owner, sampler, max(1, owner.MaxIte - 1), 'overlay');
         end
-        function [c,r]=sample_level(~,c,level)
-            [c,r]=SeMCS.sample_context(c,level);
+
+        function [context, record] = sample_level(~, context, level)
+            [context, record] = SeMCS.sample_context(context, level);
         end
-        function c=advance_level(~,c,r,level)
-            if level+1<=numel(c.owner.G)
-                c.model.G=SeMCS.prescribed_state(c.model.G,c.owner.G{level+1},false,'overlay');extra=0;
+
+        function context = advance_level(~, context, record, level)
+            if level + 1 <= numel(context.owner.G)
+                context.model.G = SeMCS.prescribed_state(context.model.G, context.owner.G{level+1}, false, 'overlay');
+                extra = 0;
             else
-                [~,c.model]=c.model.UpdObj(r.y,c.model.G.p);extra=0;
+                [~, context.model] = context.model.UpdObj(record.y, context.model.G.p);
+                extra = 0;
             end
-            c.Ncal(level)=c.Ncal(level)+extra;c.g{level+1,1}=c.model.G;
-            c.sampler.BayStc=c.model;
+
+            context.Ncal(level) = context.Ncal(level) + extra;
+            context.g{level+1, 1} = context.model.G;
+            context.sampler.BayStc = context.model;
         end
-        function c=select_run_seeds(~,c,r,level)
-            if c.targets(level+1)<=0,error('SeMCS:ScheduleExhausted','Sample budget exhausted before seed selection.');end
-            target=c.targets(level+1);[c.xs,c.ys]=c.model.SltSed(r.x,c.y{level},target);
-            c.nc=size(c.xs,2);c.steps=round(target/c.nc);
-            if c.owner.Verbose
-                fprintf('Level %d: N=%d, chains=%d, steps=%d, calls=%d\n',level,r.count,r.shape(1),r.shape(2),c.Ncal(level));
+
+        function context = select_run_seeds(~, context, record, level)
+            if context.targets(level + 1) <= 0
+                error('SeMCS:ScheduleExhausted', 'Sample budget exhausted before seed selection.');
+            end
+
+            target = context.targets(level + 1);
+            [context.xs, context.ys] = context.model.SltSed(record.x, context.y{level}, target);
+            context.nc = size(context.xs, 2);
+            context.steps = round(target / context.nc);
+            if context.owner.Verbose
+                fprintf('Level %d: N=%d, chains=%d, steps=%d, calls=%d\n', level, record.count, record.shape(1), record.shape(2), context.Ncal(level));
             end
         end
-        function [yes,c]=run_complete(~,c,~,phase)
-            yes=false;if ~strcmp(phase,'after_seeds'),return;end
-            if c.nc<=0 || numel(c.x)==c.limit,yes=true;return;end
-            c.complete=c.model.FlgCvg;yes=c.complete;
+
+        function [yes, context] = run_complete(~, context, ~, phase)
+            yes = false;
+            if ~strcmp(phase, 'after_seeds')
+                return;
+            end
+
+            if context.nc <= 0 || numel(context.x) == context.limit
+                yes = true;
+                return;
+            end
+
+            context.complete = context.model.FlgCvg;
+            yes = context.complete;
         end
-        function out=finish_run(~,c)
-            out=SeMCS.pack_output(c);
+
+        function out = finish_run(~, context)
+            out = SeMCS.pack_output(context);
         end
+
     end
 end
 
 function spec = method_sampler_profile(family, name)
-% Sampling settings for this method; thresholds, budgets and stopping are unchanged.
-if nargin < 2 || isempty(name), name='author_latest'; end
-family=char(family); name=char(name);
-if ~any(strcmp(name,{'author_latest','paper'}))
-    error('method_sampler_profile:Name','Choose author_latest or paper.');
-end
-if ~strcmp(family,'sus_bayes')
-    error('method_sampler_profile:Family','Unsupported method family for this model.');
-end
-options=struct();
-options.aCS=struct('Sigma0Mode','seed_std','CarryLambda',false);
-options.ES=struct('ESMode','coordinate','Ntry',20);
-options.aCS.AcceptArithmetic='log';options.aCS.CoordinateMode='identity';
-options.aCS.GroupMode='available';options.aCS.AcceptanceRateMode='attempts';
-options.ES.AcceptArithmetic='log';options.ES.CoordinateMode='identity';options.ES.SeedUpdateMode='each_step';
-options.CW_aMH=struct('AcceptArithmetic','log','PriorMode','gaussian','CoordinateMode','identity');
-if strcmp(name,'author_latest')
-    options.aCS.AcceptArithmetic='exp';options.ES.AcceptArithmetic='exp';options.CW_aMH=struct('AcceptArithmetic','exp');
-    options.aCS.GroupMode='fixed';
-end
-spec=struct('family',family,'name',name,'default_sampler','aCS','options',options);
+    % Sampling settings for this method; thresholds, budgets and stopping are unchanged.
+    if nargin < 2 || isempty(name)
+        name = 'author_latest';
+    end
+
+    family = char(family);
+    name = char(name);
+    if ~any(strcmp(name, {'author_latest', 'paper'}))
+        error('method_sampler_profile:Name', 'Choose author_latest or paper.');
+    end
+
+    if ~strcmp(family, 'sus_bayes')
+        error('method_sampler_profile:Family', 'Unsupported method family for this model.');
+    end
+
+    options = struct();
+    options.aCS = struct('Sigma0Mode', 'seed_std', 'CarryLambda', false);
+    options.ES = struct('ESMode', 'coordinate', 'Ntry', 20);
+    options.aCS.AcceptArithmetic = 'log';
+    options.aCS.CoordinateMode = 'identity';
+    options.aCS.GroupMode = 'available';
+    options.aCS.AcceptanceRateMode = 'attempts';
+    options.ES.AcceptArithmetic = 'log';
+    options.ES.CoordinateMode = 'identity';
+    options.ES.SeedUpdateMode = 'each_step';
+    options.CW_aMH = struct('AcceptArithmetic', 'log', 'PriorMode', 'gaussian', 'CoordinateMode', 'identity');
+    if strcmp(name, 'author_latest')
+        options.aCS.AcceptArithmetic = 'exp';
+        options.ES.AcceptArithmetic = 'exp';
+        options.CW_aMH = struct('AcceptArithmetic', 'exp');
+        options.aCS.GroupMode = 'fixed';
+    end
+
+    spec = struct('family', family, 'name', name, 'default_sampler', 'aCS', 'options', options);
 end
