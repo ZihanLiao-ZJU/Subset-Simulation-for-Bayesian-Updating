@@ -26,7 +26,6 @@ classdef NumSim
         X       % Cell array of samples at each level
         Y       % Cell array of function values at each level
         G       % Cell array of intermediate parameters
-        H       % (Unused or reserved)
         C       % Normalization constant (log) at each level
         NumIte  % Number of iterations
         NumSam  % Number of samples per level

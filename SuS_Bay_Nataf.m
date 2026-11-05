@@ -27,12 +27,34 @@ classdef SuS_Bay_Nataf
     end
 
     methods
-        function obj = SuS_Bay_Nataf(LKF)
+        function spec = sampler_profile(obj,family,name)
+            if nargin<3||isempty(name),name='author_latest';end
+            if strcmp(name,'closed_ties_unit_fallback_v1')&&isfield(obj.G,'method_profile')&& ...
+                    ~strcmp(obj.G.method_profile,'closed_ties_unit_fallback_v1')
+                error('SuSClosedFallback:FreshModelRequired','Construct a fresh model with the closed-boundary profile instead of switching an initialized method.');
+            end
+            spec=method_sampler_profile(family,name);
+        end
+        function obj=apply_method_profile(obj,spec)
+            if SuSClosedFallbackPolicy.enabled(obj) && ~strcmp(spec.name,'closed_ties_unit_fallback_v1')
+                error('SuSClosedFallback:FreshModelRequired','Create a fresh model to change the closed-boundary method policy.');
+            end
+            if strcmp(spec.name,'closed_ties_unit_fallback_v1')
+                if ~isfield(obj.G,'sus_runtime'),obj=SuSClosedFallbackPolicy.initialize(obj);
+                elseif obj.G.sus_runtime.run_started
+                    obj.G.sampler.aCS.Sigma0Mode=obj.G.sus_runtime.effective_sigma0_mode;
+                end
+            end
+        end
+        function obj = SuS_Bay_Nataf(LKF, method_profile)
+            if nargin < 2 || isempty(method_profile), method_profile='author_latest'; end
+            setup_semcs();
             % Constructor
             % INPUT:
             %   LKF : likelihood function object
             obj.LKF = LKF;
             obj.Ndim = LKF.Ndim;
+            obj=semcs.configure_method_profile(obj,'sus_bayes',method_profile);
         end
 
         function obj = EvlY(obj, u)
@@ -55,7 +77,9 @@ classdef SuS_Bay_Nataf
             L = y(1,:);
             g = obj.G.parameters;
             L_i = g(3);
-            if isinf(L_i)
+            if SuSClosedFallbackPolicy.enabled(obj)
+                Li = log(double(SuSClosedFallbackPolicy.contains(L,L_i)));
+            elseif isinf(L_i)
                 Li = zeros(size(L));
             else
                 Li = log(double(L > L_i));
@@ -89,7 +113,12 @@ classdef SuS_Bay_Nataf
             else
                 L_i1 = L_sort(1);
             end
-            p_i1 = p_i + log(sum(L > L_i1) / Nsam);
+            if SuSClosedFallbackPolicy.enabled(obj)
+                SuSClosedFallbackPolicy.validate_values(L);
+                p_i1 = p_i + log(sum(SuSClosedFallbackPolicy.contains(L,L_i1)) / Nsam);
+            else
+                p_i1 = p_i + log(sum(L > L_i1) / Nsam);
+            end
 
             z_i1 = p_i + logmean(min(logminus(L,L_i), logminus(L_i1,L_i)), "all");
             z_tmp1 = p_i + logmean(logminus(L,L_i), "all");
@@ -102,6 +131,10 @@ classdef SuS_Bay_Nataf
 
         function [u_sed, y_sed] = SltSed(obj, u, y, Nsam)
             % Select seed samples for next iteration
+            if SuSClosedFallbackPolicy.enabled(obj)
+                [u_sed,y_sed]=SuSClosedFallbackPolicy.project(obj,u,y,Nsam);
+                return
+            end
             u = u(1:obj.Ndim,:);
             y = y(1:obj.Nfun,:);
             L = y(3,:);
@@ -153,5 +186,22 @@ classdef SuS_Bay_Nataf
             x = obj.LKF.Pdis.U2X(u);
         end
     end
+    methods
+        function [obj,Ncal]=after_advance(obj,x,y,g)
+            Ncal=0;
+            if SuSClosedFallbackPolicy.enabled(obj)
+                obj=SuSClosedFallbackPolicy.plan(obj,x{end},y{end},obj.G.run.NumSam,numel(x));
+            end
+        end
+        function [y,g,obj,Ncal]=advance(obj,x,y,p)
+            [g,obj]=obj.UpdObj(y,p);Ncal=0;
+        end
+        function [xs,ys,steps]=select_seeds(obj,x,y,N)
+            [xs,ys]=obj.SltSed(x,y,N);steps=round(N/size(xs,2));
+        end
+        function yes=stop(obj),yes=obj.FlgCvg;end
+
+    end
+
 end
 
