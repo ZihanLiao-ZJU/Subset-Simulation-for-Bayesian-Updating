@@ -7,6 +7,7 @@ classdef SuS_Bay_Nataf
         % Ndim    : Dimension of parameter space
         % X       : Samples in standard normal space [Ndim × Nsam]
         % Y       : Function values [4 × Nsam]
+        MethodProfile = 'author_latest'
         LKF
         Nfun = 4;
         Ndim
@@ -38,7 +39,7 @@ classdef SuS_Bay_Nataf
             %   LKF : likelihood function object
             obj.LKF = LKF;
             obj.Ndim = LKF.Ndim;
-            obj=MCMCBase.configure_method_profile(obj,'sus_bayes',method_profile);
+            obj.MethodProfile=method_profile;method_sampler_profile('sus_bayes',method_profile);obj.G.p=0.1;
         end
 
         function obj = EvlY(obj, u)
@@ -159,18 +160,50 @@ classdef SuS_Bay_Nataf
             x = obj.LKF.Pdis.U2X(u);
         end
     end
+
     methods
-        function [y,g,obj,Ncal]=advance(obj,x,y,p)
-            [g,obj]=obj.UpdObj(y,p);Ncal=0;
+        function options=sampler_options(obj,kernel)
+            spec=method_sampler_profile('sus_bayes',obj.MethodProfile);options=struct();
+            if isfield(spec.options,kernel),options=spec.options.(kernel);end
         end
-        function [xs,ys,steps]=select_seeds(obj,x,y,N)
-            [xs,ys]=obj.SltSed(x,y,N);steps=round(N/size(xs,2));
+        function defaults=run_defaults(obj)
+            defaults=struct('NumSam',1000,'ConPrb',0.1,'MaxIte',10000,'Verbose',true);
+            if isprop(obj,'Nsam'),defaults.NumSam=obj.Nsam;end
+            if isfield(obj.G,'p'),defaults.ConPrb=obj.G.p;end
         end
-        function yes=stop(obj),yes=obj.FlgCvg;end
-
+        function c=start_run(~,owner,sampler)
+            owner.IntBay.G.p=owner.ConPrb;
+            c=SeMCS.start_context(owner,sampler,max(1,owner.MaxIte-1),'overlay');
+        end
+        function [c,r]=sample_level(~,c,level)
+            [c,r]=SeMCS.sample_context(c,level);
+        end
+        function c=advance_level(~,c,r,level)
+            if level+1<=numel(c.owner.G)
+                c.model.G=SeMCS.prescribed_state(c.model.G,c.owner.G{level+1},false,'overlay');extra=0;
+            else
+                [~,c.model]=c.model.UpdObj(r.y,c.model.G.p);extra=0;
+            end
+            c.Ncal(level)=c.Ncal(level)+extra;c.g{level+1,1}=c.model.G;
+            c.sampler.BayStc=c.model;
+        end
+        function c=select_run_seeds(~,c,r,level)
+            if c.targets(level+1)<=0,error('SeMCS:ScheduleExhausted','Sample budget exhausted before seed selection.');end
+            target=c.targets(level+1);[c.xs,c.ys]=c.model.SltSed(r.x,c.y{level},target);
+            c.nc=size(c.xs,2);c.steps=round(target/c.nc);
+            if c.owner.Verbose
+                fprintf('Level %d: N=%d, chains=%d, steps=%d, calls=%d\n',level,r.count,r.shape(1),r.shape(2),c.Ncal(level));
+            end
+        end
+        function [yes,c]=run_complete(~,c,~,phase)
+            yes=false;if ~strcmp(phase,'after_seeds'),return;end
+            if c.nc<=0 || numel(c.x)==c.limit,yes=true;return;end
+            c.complete=c.model.FlgCvg;yes=c.complete;
+        end
+        function out=finish_run(~,c)
+            out=SeMCS.pack_output(c);
+        end
     end
-
-
 end
 
 function spec = method_sampler_profile(family, name)

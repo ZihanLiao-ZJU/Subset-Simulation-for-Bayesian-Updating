@@ -1,22 +1,18 @@
 % Adapted from Zihan Liao's public MATLAB MCMC samplers; repository LICENSE applies.
 classdef ES < MCMCBase
     % Coordinate compatibility mode or scalar-angle global elliptical slice.
-    properties(Dependent)
-        ESMode
-        SeedUpdateMode
+    properties
+        ESMode = 'coordinate'
+        SeedUpdateMode = 'each_step'
     end
     methods
-        function value=get.SeedUpdateMode(obj),value=obj.read_option('SeedUpdateMode');end
-        function obj=set.SeedUpdateMode(obj,value),obj=obj.write_option('SeedUpdateMode',value);end
-        function value=get.ESMode(obj),value=obj.read_option('ESMode');end
-        function obj=set.ESMode(obj,value),obj=obj.write_option('ESMode',value);end
         function obj=ES(b)
             if nargin<1, b=[]; end
-            obj@MCMCBase(b);
+            obj@MCMCBase(b);obj=obj.apply_profile();
         end
         function [u,y,Ncal,b]=SamGen(obj,varargin)
             [b,u0,y0,Ncal,save,L,Nc,Ns]=obj.prepare(varargin{:});
-            opts=MCMCBase.kernel_options(b,'ES');coordinate=strcmp(opts.ESMode,'coordinate');coordinate2pi=strcmp(opts.ESMode,'coordinate_2pi');
+            opts=obj.configuration_options();coordinate=strcmp(opts.ESMode,'coordinate');coordinate2pi=strcmp(opts.ESMode,'coordinate_2pi');
             assert(coordinate||coordinate2pi||strcmp(opts.ESMode,'global'),'ES:Mode','Choose coordinate, coordinate_2pi or global');
             if coordinate||coordinate2pi,validateattributes(opts.Ntry,{'numeric'},{'scalar','integer','positive','finite'});end
             d=b.Ndim; z0=obj.to_reference(b,u0,L,opts); u=zeros(d,Nc,Ns); y=zeros(b.Nfun,Nc,Ns);

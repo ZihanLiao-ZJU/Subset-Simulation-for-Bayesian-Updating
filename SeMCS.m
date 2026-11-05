@@ -1,108 +1,74 @@
 classdef SeMCS
-    % Compatibility options are views of the model's complete G snapshot.
+    % Common sequential sampling loop; each model owns its level policies.
     properties
-        IntBay
-    end
-    properties(Dependent)
         Sampler
-        G
-        NumSam
-        ConPrb
-        MaxIte
-        Verbose
-    end
-    properties(Access=private)
-        SamplerPrototype
+        IntBay
+        NumSam = 1000
+        ConPrb = 0.1
+        MaxIte = 10000
+        G = {}
+        Verbose = true
     end
     methods
-        function obj=SeMCS(s)
-            obj.IntBay=MCMCBase.configure(s.BayStc);obj.Sampler=s;
+        function obj=SeMCS(sampler)
+            obj.Sampler=sampler;obj.IntBay=sampler.BayStc;
+            defaults=obj.IntBay.run_defaults();
+            for name=fieldnames(defaults)',obj.(name{1})=defaults.(name{1});end
         end
-        function s=get.Sampler(obj)
-            s=obj.SamplerPrototype;s.BayStc=obj.IntBay;
-        end
-        function obj=set.Sampler(obj,s)
-            [obj.IntBay,obj.SamplerPrototype]=MCMCBase.adopt_sampler(obj.IntBay,s);
-        end
-        function v=get.G(obj),v=obj.IntBay.G.run.schedule;end
-        function obj=set.G(obj,v),obj.IntBay.G.run.schedule=v;end
-        function v=get.NumSam(obj),v=obj.IntBay.G.run.NumSam;end
-        function obj=set.NumSam(obj,v),obj.IntBay.G.run.NumSam=v;end
-        function v=get.ConPrb(obj),v=obj.IntBay.G.p;end
-        function obj=set.ConPrb(obj,v),obj.IntBay.G.p=v;end
-        function v=get.MaxIte(obj),v=obj.IntBay.G.run.MaxIte;end
-        function obj=set.MaxIte(obj,v),obj.IntBay.G.run.MaxIte=v;end
-        function v=get.Verbose(obj),v=obj.IntBay.G.run.Verbose;end
-        function obj=set.Verbose(obj,v),obj.IntBay.G.run.Verbose=v;end
         function out=RunIte(obj)
-            b=obj.IntBay;
-            % Preserve the original legacy cap and seed-selection rules.
-            b.G.run.level_offset=1;
-            b.G.run.select_at_cap=true;
-            % This is the original Engine construction's configure/adopt step.
-            worker=obj;worker.IntBay=MCMCBase.configure(b);worker.Sampler=obj.Sampler;
-            out=worker.run_levels();
-        end
-    end
-    methods(Access=private)
-        function out=run_levels(obj)
-            b=MCMCBase.configure(obj.IntBay);s=obj.Sampler;r=b.G.run;
-            validateattributes(r.NumSam,{'numeric'},{'vector','integer','positive','finite'});
-            validateattributes(r.MaxIte,{'numeric'},{'scalar','integer','positive','finite'});
-            cap=max(1,r.MaxIte-r.level_offset);N=repmat(r.NumSam(1),cap+1,1);
-            if numel(r.NumSam)>1,N(:)=0;N(1:numel(r.NumSam))=r.NumSam(:);end
-            preset=r.schedule;
-            if ~isempty(preset),b.G=merge(b.G,preset{1},true);end
-            x=cell(cap,1);y=x;g=cell(cap+1,1);
-            counts=zeros(cap,1);shape=zeros(cap,2);calls=zeros(cap,1);
-            converged=false;g{1}=b.G;
-            for k=1:cap
-                s.BayStc=b;g{k}=b.G;
-                if k==1
-                    if ismethod(b,'initial_samples') && (~isfield(r,'initial_mode')||~strcmp(r.initial_mode,'sampler')),[x{k},y{k},calls(k),b]=b.initial_samples(N(k));
-                    else,[x{k},y{k},calls(k),b]=s.SamGen(N(k),1);end
-                else
-                    [x{k},y{k},calls(k),b]=s.SamGen(xs,ys,steps);
-                end
-                shape(k,:)=[size(y{k},2),size(y{k},3)];counts(k)=prod(shape(k,:));
-                if k+1<=numel(preset)
-                    b.G=merge(b.G,preset{k+1},false);extra=0;
-                else
-                    [y{k},~,b,extra]=b.advance(x{k},y{k},b.G.p);
-                end
-                calls(k)=calls(k)+extra;g{k+1}=b.G;
-                if r.stop_before_seeds && b.stop(),converged=true;break;end
-                if k==cap && ~r.select_at_cap,break;end
-                if N(k+1)<=0,error('semcs:Schedule','Sample budget exhausted.');end
-                [xs,ys,steps]=b.select_seeds(x{k},y{k},N(k+1));
-                if r.Verbose,fprintf('Level %d: N=%d, chains=%d, steps=%d, calls=%d\n',k,counts(k),shape(k,1),shape(k,2),calls(k));end
-                if isempty(xs)||k==cap,break;end
-                if b.stop(),converged=true;break;end
+            c=obj.IntBay.start_run(obj,obj.Sampler);
+            for level=1:c.limit
+                [c,r]=c.model.sample_level(c,level);
+                c=c.model.advance_level(c,r,level);
+                [done,c]=c.model.run_complete(c,r,'before_seeds');
+                if done,break;end
+                c=c.model.select_run_seeds(c,r,level);
+                [done,c]=c.model.run_complete(c,r,'after_seeds');
+                if done,break;end
             end
-            out=struct('x',{x(1:k)},'y',{y(1:k)},'g',{g(1:k+1)}, ...
-                'Nsam',counts(1:k),'Nsze',shape(1:k,:),'Ncal',calls(1:k), ...
-                'Nite',k,'flg_cvg',converged,'intBay',b);
+            out=c.model.finish_run(c);
         end
     end
-end
-
-function next=merge(old,preset,initial)
-if ~isstruct(preset),next=old;next.parameters=preset;return;end
-next=overlay(old,preset);
-% A proposal schedule does not replace the host's execution policy or itself.
-next.run=old.run;
-% Initial explicit live state is allowed; later levels retain native carry.
-if ~initial
- for key={'lambda','HMC_time'}
-  name=key{1};if isfield(old,name),next.(name)=old.(name);end
- end
-end
-end
-function result=overlay(result,patch)
-for key=fieldnames(patch)'
- name=key{1};value=patch.(name);
- if isfield(result,name)&&isstruct(result.(name))&&isscalar(result.(name))&&isstruct(value)&&isscalar(value)
-  result.(name)=overlay(result.(name),value);
- else,result.(name)=value;end
-end
+    methods(Static)
+        function c=start_context(owner,sampler,limit,mode)
+            model=owner.IntBay;targets=zeros(owner.MaxIte+1,1);
+            if numel(owner.NumSam)>1,targets(1:numel(owner.NumSam))=owner.NumSam;
+            else,targets(:)=owner.NumSam;end
+            if ~isempty(owner.G),model.G=SeMCS.prescribed_state(model.G,owner.G{1},true,mode);end
+            sampler.BayStc=model;
+            c=struct('owner',owner,'model',model,'sampler',sampler,'limit',limit, ...
+                'targets',targets,'nc',targets(1),'steps',1,'xs',[],'ys',[], ...
+                'x',{{}},'y',{{}},'g',{{model.G}},'Nsam',[],'Nsze',zeros(0,2),'Ncal',[],'complete',false);
+        end
+        function [c,r]=sample_context(c,level)
+            if level==1,[x,y,calls,model]=c.sampler.SamGen(c.nc,c.steps);
+            else,[x,y,calls,model]=c.sampler.SamGen(c.xs,c.ys,c.steps);end
+            c.model=model;
+            r=struct('x',x,'y',y,'calls',calls,'count',c.nc*c.steps,'shape',[c.nc,c.steps]);
+            c.x{level,1}=x;c.y{level,1}=y;c.Nsam(level,1)=r.count;
+            c.Nsze(level,:)=r.shape;c.Ncal(level,1)=calls;
+        end
+        function out=pack_output(c)
+            out=struct('x',{c.x},'y',{c.y},'g',{c.g},'Nsam',c.Nsam, ...
+                'Nsze',c.Nsze,'Ncal',c.Ncal,'Nite',numel(c.x),'flg_cvg',c.complete,'intBay',c.model);
+        end
+        function next=prescribed_state(old,preset,initial,mode)
+            if ~isstruct(preset),next=old;next.parameters=preset;
+            elseif strcmp(mode,'replace'),next=preset;
+            else,next=SeMCS.overlay(old,preset);end
+            if ~initial
+                for key={'lambda','HMC_time'}
+                    name=key{1};if isfield(old,name),next.(name)=old.(name);end
+                end
+            end
+        end
+        function result=overlay(result,patch)
+            for key=fieldnames(patch)'
+                name=key{1};value=patch.(name);
+                if isfield(result,name)&&isstruct(result.(name))&&isstruct(value)
+                    result.(name)=SeMCS.overlay(result.(name),value);
+                else,result.(name)=value;end
+            end
+        end
+    end
 end

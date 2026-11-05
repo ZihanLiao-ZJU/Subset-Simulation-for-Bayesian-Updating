@@ -1,28 +1,20 @@
 % Adapted from Zihan Liao's public MATLAB MCMC samplers; repository LICENSE applies.
 classdef aCS < MCMCBase
     % Configurable whitened base scale and reset/carry lambda policy.
-    properties(Dependent)
-        Sigma0Mode
-        CarryLambda
-        GroupMode
-        AcceptanceRateMode
+    properties
+        Sigma0Mode = 'unit'
+        CarryLambda = true
+        GroupMode = 'available'
+        AcceptanceRateMode = 'attempts'
     end
     methods
-        function value=get.GroupMode(obj),value=obj.read_option('GroupMode');end
-        function obj=set.GroupMode(obj,value),obj=obj.write_option('GroupMode',value);end
-        function value=get.AcceptanceRateMode(obj),value=obj.read_option('AcceptanceRateMode');end
-        function obj=set.AcceptanceRateMode(obj,value),obj=obj.write_option('AcceptanceRateMode',value);end
-        function value=get.Sigma0Mode(obj),value=obj.read_option('Sigma0Mode');end
-        function obj=set.Sigma0Mode(obj,value),obj=obj.write_option('Sigma0Mode',value);end
-        function value=get.CarryLambda(obj),value=obj.read_option('CarryLambda');end
-        function obj=set.CarryLambda(obj,value),obj=obj.write_option('CarryLambda',value);end
         function obj=aCS(b)
             if nargin<1, b=[]; end
-            obj@MCMCBase(b);
+            obj@MCMCBase(b);obj=obj.apply_profile();
         end
         function [u,y,Ncal,b]=SamGen(obj,varargin)
             [b,u0,y0,Ncal,save,L,Nc,Ns]=obj.prepare(varargin{:});
-            opts=MCMCBase.kernel_options(b,'aCS');
+            opts=obj.configuration_options();
             d=b.Ndim; u=zeros(d,Nc,Ns); y=zeros(b.Nfun,Nc,Ns);
             unit=strcmp(opts.Sigma0Mode,'unit');identity=isequal(L,eye(d));mapped=strcmp(opts.CoordinateMode,'model');
             assert(unit||strcmp(opts.Sigma0Mode,'seed_std'),'aCS:Sigma0Mode','Choose unit or seed_std');

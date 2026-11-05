@@ -5,11 +5,11 @@ classdef HMC < MCMCBase
     methods
         function obj=HMC(b)
             if nargin<1, b=[]; end
-            obj@MCMCBase(b);
+            obj@MCMCBase(b);obj=obj.apply_profile();
         end
         function [u,y,Ncal,b]=SamGen(obj,varargin)
             [b,u0,y0,Ncal,save,L,Nc,Ns]=obj.prepare(varargin{:});
-            opts=MCMCBase.kernel_options(b,'HMC');
+            opts=obj.configuration_options();
             d=b.Ndim; u=zeros(d,Nc,Ns); y=zeros(b.Nfun,Nc,Ns);
             v=reshape(L*reshape(randn(d,Nc,Ns),d,[]),d,Nc,Ns); p=rand(1,Nc,Ns);
             time=obj.state(b,'HMC_time',opts.InitialTime);

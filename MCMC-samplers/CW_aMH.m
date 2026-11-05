@@ -1,18 +1,16 @@
 % Adapted from Zihan Liao's public MATLAB MCMC samplers; repository LICENSE applies.
 classdef CW_aMH < MCMCBase
     % Componentwise uniform random walk MH in whitened Gaussian coordinates.
-    properties(Dependent)
-        PriorMode
+    properties
+        PriorMode = 'gaussian'
     end
     methods
-        function value=get.PriorMode(obj),value=obj.read_option('PriorMode');end
-        function obj=set.PriorMode(obj,value),obj=obj.write_option('PriorMode',value);end
         function obj=CW_aMH(b)
             if nargin<1, b=[]; end
-            obj@MCMCBase(b);
+            obj@MCMCBase(b);obj=obj.apply_profile();
         end
         function [u,y,Ncal,b]=SamGen(obj,varargin)
-            [b,u0,y0,Ncal,save,L,Nc,Ns]=obj.prepare(varargin{:});opts=MCMCBase.kernel_options(b,'CW_aMH');
+            [b,u0,y0,Ncal,save,L,Nc,Ns]=obj.prepare(varargin{:});opts=obj.configuration_options();
             d=b.Ndim; z0=L\u0; u=zeros(d,Nc,Ns); y=zeros(b.Nfun,Nc,Ns);
             du=2*rand(d,Nc,Ns)-1; p=rand(d,Nc,Ns); sigma=max(std(z0,0,2),eps);
             for k=1:Ns
