@@ -1,6 +1,3 @@
-setup_semcs();
-% Select 'public_20261102' to replay the historical public sampler settings.
-method_profile='author_latest';
 %% Initialization and Settings
 % Select CW_aMH, aCS, HMC, or ES; the original default is aCS.
 SamplerClass = @aCS;
@@ -20,7 +17,7 @@ Tfun = LKF_nD_GaussianShells(Ndim);    % Multimodal shell-shaped posterior
 
 %% Construct Sampler and Subset Simulation Framework
 % ----------------------------------------------------------------------
-IntBay = SuS_Bay_Nataf(Tfun,method_profile);    % Define Bayesian model with Nataf transformation
+IntBay = SuS_Bay_Nataf(Tfun);    % Define Bayesian model with Nataf transformation
 sampler = SamplerClass(IntBay);           % Define adaptive MCMC sampler (e.g., aCS)
 ss = main(sampler);              % Main Subset Simulation object
 ss.NumSam = Nsam;                % Set sample size per level
