@@ -108,7 +108,6 @@ classdef MCMCBase
         function obj=set.AcceptArithmetic(obj,value),obj=obj.write_option('AcceptArithmetic',value);end
         function value=get.CoordinateMode(obj),value=obj.read_option('CoordinateMode');end
         function obj=set.CoordinateMode(obj,value),obj=obj.write_option('CoordinateMode',value);end
-        function value=option(obj,b,name),opts=MCMCBase.kernel_options(b,MCMCBase.kernel_name(obj));value=opts.(name);end
 
     end
 
@@ -171,7 +170,6 @@ classdef MCMCBase
             for key=fieldnames(opts)'
                 b.G.sampler.(kernel).(key{1})=opts.(key{1});
             end
-            b.G.sampler.actual_kernel=kernel;
             prototype=s.unbound_prototype();
         else
             % Value-class custom samplers retain the writable BayStc/SamGen protocol.
@@ -187,48 +185,36 @@ classdef MCMCBase
          name=key{1};if ~isfield(b.G,'run')||~isfield(b.G.run,name),b.G=MCMCBase.state_setfield(b.G,['run.' name],defaults.(name));end
         end
         if ~isfield(b.G,'sampler'),b.G.sampler=struct();end
-        % Legacy flat writes are consumed once, then removed: one canonical source.
-        flat=MCMCBase.sampler_defaults();legacy=intersect(fieldnames(flat),fieldnames(b.G.sampler));
         for kernel={'aCS','ES','HMC','CW_aMH'}
          name=kernel{1};opts=MCMCBase.sampler_defaults(name);
          if isfield(b.G.sampler,name)
           incoming=b.G.sampler.(name);
           for key=fieldnames(incoming)',opts.(key{1})=incoming.(key{1});end
          end
-         for key=legacy',opts.(key{1})=b.G.sampler.(key{1});end
          b.G.sampler.(name)=opts;
         end
-        if ~isempty(legacy),b.G.sampler=rmfield(b.G.sampler,legacy);end
         end
         function b=configure_method_profile(b,family,name)
         % Method-owned sampling configuration only: no threshold/budget/stop changes.
         if nargin<3,name=[];end
         assert(ismethod(b,'sampler_profile'),'semcs:Profile','The model must define sampler_profile(family,name).');
         b=MCMCBase.configure(b);spec=b.sampler_profile(family,name);
-        assert(isstruct(spec)&&isscalar(spec)&&all(isfield(spec,{'family','name','default_sampler','options','evidence'})), ...
+        assert(isstruct(spec)&&isscalar(spec)&&all(isfield(spec,{'family','name','default_sampler','options'})), ...
          'semcs:Profile','The method provider must return one complete profile spec.');
         for field={'family','name','default_sampler'}
          value=spec.(field{1});
          assert((ischar(value)&&isrow(value)&&~isempty(value))||(isstring(value)&&isscalar(value)&&strlength(value)>0), ...
           'semcs:Profile','Profile identifiers must be nonempty text.');
         end
-        assert(isstruct(spec.options)&&isscalar(spec.options)&&isstruct(spec.evidence)&&isscalar(spec.evidence), ...
-         'semcs:Profile','Profile options and evidence must be scalar structs.');
+        assert(isstruct(spec.options)&&isscalar(spec.options), ...
+         'semcs:Profile','Profile options must be one scalar struct.');
         for kernel=fieldnames(spec.options)'
          key=kernel{1};patch=spec.options.(key);
          assert(isstruct(patch)&&isscalar(patch),'semcs:Profile','Each kernel options block must be one struct.');
          for option=fieldnames(patch)',b.G.sampler.(key).(option{1})=patch.(option{1});end
         end
         b.G.method_family=spec.family;b.G.method_profile=spec.name;
-        b.G.default_sampler=spec.default_sampler;b.G.method_profile_evidence=spec.evidence;
-        if ismethod(b,'apply_method_profile'),b=b.apply_method_profile(spec);end
-        end
-        function value=state_getfield(g,path,default)
-        parts=strsplit(path,'.');value=g;
-        for j=1:numel(parts)
-         if ~isstruct(value)||~isfield(value,parts{j}),value=default;return;end
-         value=value.(parts{j});
-        end
+        b.G.default_sampler=spec.default_sampler;
         end
         function name=kernel_name(s)
         if isa(s,'aCS'),name='aCS';
@@ -240,17 +226,11 @@ classdef MCMCBase
         function opts=kernel_options(b,kernel)
         opts=b.G.sampler.(kernel);
         end
-        function out=profile_snapshot(b,kernel,effective)
-        opts=struct();if isfield(b.G.sampler,kernel),opts=b.G.sampler.(kernel);end
-        out=struct('kernel',kernel,'method_profile',MCMCBase.state_getfield(b.G,'method_profile','public_20261102'), ...
-         'method_family',MCMCBase.state_getfield(b.G,'method_family','custom'),'options',opts,'effective',effective);
-        end
         function opts=sampler_defaults(kernel)
         opts=struct('SedSav',false,'Lambda',0.6,'AcpOpt',0.44,'NumIte',5,'Adapt',true,'Ntry',20,'InitialTime',pi/4);
-        if nargin<1,return;end
         opts.AcceptArithmetic='log';opts.CoordinateMode='identity';
         switch kernel
-         case 'aCS',opts.Sigma0Mode='unit';opts.CarryLambda=true;opts.GroupMode='available';opts.AcceptanceRateMode='attempts';opts.AdaptEmptyGroups=false;
+         case 'aCS',opts.Sigma0Mode='unit';opts.CarryLambda=true;opts.GroupMode='available';opts.AcceptanceRateMode='attempts';
          case 'ES',opts.ESMode='coordinate';opts.SeedUpdateMode='each_step';
          case 'CW_aMH',opts.Sigma0Mode='seed_std';opts.PriorMode='gaussian';
         end

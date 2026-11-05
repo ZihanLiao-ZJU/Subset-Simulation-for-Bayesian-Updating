@@ -2,9 +2,6 @@
 classdef HMC < MCMCBase
     % Exact Gaussian-reference HMC rotation with likelihood MH correction.
     % Rejection-based Gaussian HMC, not arbitrary-potential gradient HMC.
-    properties
-
-    end
     methods
         function obj=HMC(b)
             if nargin<1, b=[]; end
@@ -17,7 +14,6 @@ classdef HMC < MCMCBase
             v=reshape(L*reshape(randn(d,Nc,Ns),d,[]),d,Nc,Ns); p=rand(1,Nc,Ns);
             time=obj.state(b,'HMC_time',opts.InitialTime);
             if ~isscalar(time)||~isfinite(time)||time<=0||time>pi/2, error('HMC:State','G.HMC_time must lie in (0,pi/2].'); end
-            before=MCMCBase.profile_snapshot(b,'HMC',struct('time_start',time,'CarryTime',true));
             width=max(ceil(Nc/opts.NumIte),1);
             for start=1:width:Nc
                 ids=start:min(start+width-1,Nc); count=0; attempts=0;
@@ -37,8 +33,6 @@ classdef HMC < MCMCBase
                 end
             end
             b.G.HMC_time=time;
-            after=before;after.effective.time_end=time;
-            b.G.sampler_record=struct('kernel','HMC','before',before,'after',after);
         end
     end
 end

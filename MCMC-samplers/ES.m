@@ -19,8 +19,7 @@ classdef ES < MCMCBase
             opts=MCMCBase.kernel_options(b,'ES');coordinate=strcmp(opts.ESMode,'coordinate');coordinate2pi=strcmp(opts.ESMode,'coordinate_2pi');
             assert(coordinate||coordinate2pi||strcmp(opts.ESMode,'global'),'ES:Mode','Choose coordinate, coordinate_2pi or global');
             if coordinate||coordinate2pi,validateattributes(opts.Ntry,{'numeric'},{'scalar','integer','positive','finite'});end
-            before=MCMCBase.profile_snapshot(b,'ES',struct('ESMode',opts.ESMode,'NtryApplicable',coordinate||coordinate2pi));
-            d=b.Ndim; z0=obj.to_reference(b,u0,L,opts); u=zeros(d,Nc,Ns); y=zeros(b.Nfun,Nc,Ns);proposals=0;
+            d=b.Ndim; z0=obj.to_reference(b,u0,L,opts); u=zeros(d,Nc,Ns); y=zeros(b.Nfun,Nc,Ns);
             v=randn(d,Nc,Ns); p=rand(1,Nc,Ns);
             for k=1:Ns
                 if k==1 && save, u(:,:,k)=u0; y(:,:,k)=y0; continue; end
@@ -31,7 +30,6 @@ classdef ES < MCMCBase
                     while ~isempty(ids)
                         proposed=z0(:,ids).*cos(angle)+v(:,ids,k).*sin(angle);
                         proposal=obj.from_reference(b,proposed,L,opts);[b,yp,nn]=obj.evaluate(b,proposal);Ncal=Ncal+nn;
-                        proposals=proposals+numel(ids);
                         rej=obj.reject(yp(1,:),y0(1,ids),p(1,ids,k));yes=~rej;
                         z(:,ids(yes))=proposed(:,yes);u(:,ids(yes),k)=proposal(:,yes);y(:,ids(yes),k)=yp(:,yes);
                         if ~any(rej),break;end
@@ -49,7 +47,6 @@ classdef ES < MCMCBase
                         angle=rand(d,numel(ids)).*(hi-lo)+lo;
                         proposed=cos(angle).*z0(:,ids)+sin(angle).*v(:,ids,k);
                         proposal=obj.from_reference(b,proposed,L,opts);[b,yp,nn]=obj.evaluate(b,proposal);Ncal=Ncal+nn;
-                        proposals=proposals+numel(ids);
                         rej=obj.reject(yp(1,:),y0(1,ids),p(1,ids,k));yes=~rej;
                         z(:,ids(yes))=proposed(:,yes);u(:,ids(yes),k)=proposal(:,yes);y(:,ids(yes),k)=yp(:,yes);
                         if ~any(rej),break;end
@@ -66,7 +63,6 @@ classdef ES < MCMCBase
                 for j=1:opts.Ntry
                     angle=lo+(hi-lo).*rand(d,numel(ids)); proposed=cos(angle).*R(:,ids);
                     proposal=obj.from_reference(b,proposed,L,opts); [b,yp,nn]=obj.evaluate(b,proposal); Ncal=Ncal+nn;
-                    proposals=proposals+numel(ids);
                     rej=obj.reject(yp(1,:),y0(1,ids),p(1,ids,k)); yes=~rej;
                     z(:,ids(yes))=proposed(:,yes); u(:,ids(yes),k)=proposal(:,yes); y(:,ids(yes),k)=yp(:,yes);
                     if ~any(rej),all_accepted=true;break;end
@@ -75,8 +71,6 @@ classdef ES < MCMCBase
                 end
                 if strcmp(opts.SeedUpdateMode,'each_step')||all_accepted,z0=z;u0=u(:,:,k);y0=y(:,:,k);end
             end
-            after=before;after.effective.proposals=proposals;
-            b.G.sampler_record=struct('kernel','ES','before',before,'after',after);
         end
     end
 end

@@ -15,8 +15,6 @@ classdef CW_aMH < MCMCBase
             [b,u0,y0,Ncal,save,L,Nc,Ns]=obj.prepare(varargin{:});opts=MCMCBase.kernel_options(b,'CW_aMH');
             d=b.Ndim; z0=L\u0; u=zeros(d,Nc,Ns); y=zeros(b.Nfun,Nc,Ns);
             du=2*rand(d,Nc,Ns)-1; p=rand(d,Nc,Ns); sigma=max(std(z0,0,2),eps);
-            before=MCMCBase.profile_snapshot(b,'CW_aMH',struct('Sigma0Mode','seed_std','sigma0',sigma, ...
-                'coordinates','whitened','LambdaApplicable',false,'AcceptanceTargetApplicable',false,'GroupsApplicable',false));
             for k=1:Ns
                 if k==1 && save, u(:,:,k)=u0; y(:,:,k)=y0; continue; end
                 z=z0+sigma.*du(:,:,k);
@@ -34,7 +32,6 @@ classdef CW_aMH < MCMCBase
                 end
                 u(:,:,k)=u0; y(:,:,k)=y0;
             end
-            b.G.sampler_record=struct('kernel','CW_aMH','before',before,'after',before);
         end
     end
 end

@@ -6,15 +6,12 @@ classdef aCS < MCMCBase
         CarryLambda
         GroupMode
         AcceptanceRateMode
-        AdaptEmptyGroups
     end
     methods
         function value=get.GroupMode(obj),value=obj.read_option('GroupMode');end
         function obj=set.GroupMode(obj,value),obj=obj.write_option('GroupMode',value);end
         function value=get.AcceptanceRateMode(obj),value=obj.read_option('AcceptanceRateMode');end
         function obj=set.AcceptanceRateMode(obj,value),obj=obj.write_option('AcceptanceRateMode',value);end
-        function value=get.AdaptEmptyGroups(obj),value=obj.read_option('AdaptEmptyGroups');end
-        function obj=set.AdaptEmptyGroups(obj,value),obj=obj.write_option('AdaptEmptyGroups',value);end
         function value=get.Sigma0Mode(obj),value=obj.read_option('Sigma0Mode');end
         function obj=set.Sigma0Mode(obj,value),obj=obj.write_option('Sigma0Mode',value);end
         function value=get.CarryLambda(obj),value=obj.read_option('CarryLambda');end
@@ -42,13 +39,9 @@ classdef aCS < MCMCBase
             end
             if opts.CarryLambda,lambda=obj.state(b,'lambda',opts.Lambda);else,lambda=opts.Lambda;end
             if ~isscalar(lambda)||~isfinite(lambda)||lambda<=0, error('aCS:State','G.lambda must be finite and positive.'); end
-            b.G.aCS_sigma0=sigma0;b.G.lambda=lambda;
-            before=MCMCBase.profile_snapshot(b,'aCS',struct('Sigma0Mode',opts.Sigma0Mode, ...
-                'sigma0',sigma0,'lambda_start',lambda,'CarryLambda',opts.CarryLambda, ...
-                'coordinates','whitened','reference_is_identity',identity));
+            b.G.lambda=lambda;
             width=max(ceil(Nc/opts.NumIte),1);
             if strcmp(opts.GroupMode,'fixed'),rounds=opts.NumIte;else,rounds=ceil(Nc/width);end
-            skipped_empty_groups=false(1,rounds);
             for group=1:rounds
                 first=min((group-1)*width+1,Nc);last=min(group*width,Nc);ids=first:last;
                 if unit,sigma=min(lambda,1);rho=sqrt(1-sigma^2);
@@ -66,19 +59,12 @@ classdef aCS < MCMCBase
                     u(:,ids,k)=u0(:,ids); y(:,ids,k)=y0(:,ids);
                     count=count+sum(yes); attempts=attempts+numel(ids);
                 end
-                if attempts==0,skipped_empty_groups(group)=true;end
                 if opts.Adapt&&attempts>0
                     if strcmp(opts.AcceptanceRateMode,'chain_steps'),rate=count/numel(ids)/Ns;else,rate=count/attempts;end
                     lambda=exp(log(lambda)+(rate-opts.AcpOpt)/sqrt(group));
                 end
             end
             b.G.lambda=lambda;
-            after=before;after.effective.lambda_end=lambda;
-            if any(skipped_empty_groups)
-                after.effective.adaptation_skipped_groups=find(skipped_empty_groups);
-                after.effective.adaptation_skip_reason='zero_proposals';
-            end
-            b.G.sampler_record=struct('kernel','aCS','before',before,'after',after);
         end
     end
 end
