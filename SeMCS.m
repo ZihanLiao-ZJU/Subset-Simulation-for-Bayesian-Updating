@@ -27,8 +27,32 @@ classdef SeMCS
             context = obj.IntBay.start_run(obj, obj.Sampler);
 
             for level = 1:context.limit
-                % Sample one level and update the intermediate distribution.
-                [context, record] = context.model.sample_level(context, level);
+                % SamGen: draw initial samples or continue the current chains.
+                if ismethod(context.model, 'sample_level')
+                    [context, record] = context.model.sample_level(context, level);
+                else
+                    if level == 1
+                        [x, y, calls, model] = context.sampler.SamGen(context.nc, context.steps);
+                    else
+                        [x, y, calls, model] = context.sampler.SamGen(context.xs, context.ys, context.steps);
+                    end
+                    context.model = model;
+
+                    record = struct( ...
+                        'x', x, ...
+                        'y', y, ...
+                        'calls', calls, ...
+                        'count', context.nc * context.steps, ...
+                        'shape', [context.nc, context.steps]);
+
+                    context.x{level, 1} = x;
+                    context.y{level, 1} = y;
+                    context.Nsam(level, 1) = record.count;
+                    context.Nsze(level, :) = record.shape;
+                    context.Ncal(level, 1) = calls;
+                end
+
+                % UpdObj / update: advance the intermediate distribution.
                 context = context.model.advance_level(context, record, level);
 
                 % Each model retains its original seed/stop ordering.
@@ -37,6 +61,7 @@ classdef SeMCS
                     break;
                 end
 
+                % SltSed / SedSlt / select_seeds: choose seeds for the next level.
                 context = context.model.select_run_seeds(context, record, level);
                 [done, context] = context.model.run_complete(context, record, 'after_seeds');
                 if done
@@ -81,28 +106,6 @@ classdef SeMCS
                 'Nsze', zeros(0, 2), ...
                 'Ncal', [], ...
                 'complete', false);
-        end
-
-        function [context, record] = sample_context(context, level)
-            if level == 1
-                [x, y, calls, model] = context.sampler.SamGen(context.nc, context.steps);
-            else
-                [x, y, calls, model] = context.sampler.SamGen(context.xs, context.ys, context.steps);
-            end
-            context.model = model;
-
-            record = struct( ...
-                'x', x, ...
-                'y', y, ...
-                'calls', calls, ...
-                'count', context.nc * context.steps, ...
-                'shape', [context.nc, context.steps]);
-
-            context.x{level, 1} = x;
-            context.y{level, 1} = y;
-            context.Nsam(level, 1) = record.count;
-            context.Nsze(level, :) = record.shape;
-            context.Ncal(level, 1) = calls;
         end
 
         function out = pack_output(context)
