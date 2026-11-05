@@ -19,7 +19,7 @@ Tfun = LKF_nD_GaussianShells(Ndim);    % Multimodal shell-shaped posterior
 % ----------------------------------------------------------------------
 IntBay = SuS_Bay_Nataf(Tfun);    % Define Bayesian model with Nataf transformation
 sampler = SamplerClass(IntBay);           % Define adaptive MCMC sampler (e.g., aCS)
-ss = main(sampler);              % Main Subset Simulation object
+ss = SeMCS(sampler);              % Main Subset Simulation object
 ss.NumSam = Nsam;                % Set sample size per level
 % ----------------------------------------------------------------------
 
