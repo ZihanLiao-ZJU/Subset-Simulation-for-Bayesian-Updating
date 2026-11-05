@@ -1,26 +1,53 @@
-classdef Engine
-    % The only sequential sampling loop. Algorithm rules belong to the model.
+classdef SeMCS
+    % Compatibility options are views of the model's complete G snapshot.
     properties
-        Model
+        IntBay
     end
     properties(Dependent)
         Sampler
+        G
+        NumSam
+        ConPrb
+        MaxIte
+        Verbose
     end
     properties(Access=private)
         SamplerPrototype
     end
     methods
+        function obj=SeMCS(s)
+            obj.IntBay=MCMCBase.configure(s.BayStc);obj.Sampler=s;
+        end
         function s=get.Sampler(obj)
-            s=obj.SamplerPrototype;s.BayStc=obj.Model;
+            s=obj.SamplerPrototype;s.BayStc=obj.IntBay;
         end
         function obj=set.Sampler(obj,s)
-            [obj.Model,obj.SamplerPrototype]=semcs.adopt_sampler(obj.Model,s);
+            [obj.IntBay,obj.SamplerPrototype]=MCMCBase.adopt_sampler(obj.IntBay,s);
         end
-        function obj=Engine(model,sampler)
-            obj.Model=semcs.configure(model);obj.Sampler=sampler;
+        function v=get.G(obj),v=obj.IntBay.G.run.schedule;end
+        function obj=set.G(obj,v),obj.IntBay.G.run.schedule=v;end
+        function v=get.NumSam(obj),v=obj.IntBay.G.run.NumSam;end
+        function obj=set.NumSam(obj,v),obj.IntBay.G.run.NumSam=v;end
+        function v=get.ConPrb(obj),v=obj.IntBay.G.p;end
+        function obj=set.ConPrb(obj,v),obj.IntBay.G.p=v;end
+        function v=get.MaxIte(obj),v=obj.IntBay.G.run.MaxIte;end
+        function obj=set.MaxIte(obj,v),obj.IntBay.G.run.MaxIte=v;end
+        function v=get.Verbose(obj),v=obj.IntBay.G.run.Verbose;end
+        function obj=set.Verbose(obj,v),obj.IntBay.G.run.Verbose=v;end
+        function out=RunIte(obj)
+            b=obj.IntBay;
+            if ismethod(b,'prepare_run'),b=b.prepare_run(obj.Sampler);end
+            % Preserve the original legacy cap and seed-selection rules.
+            b.G.run.level_offset=1;
+            b.G.run.select_at_cap=true;
+            % This is the original Engine construction's configure/adopt step.
+            worker=obj;worker.IntBay=MCMCBase.configure(b);worker.Sampler=obj.Sampler;
+            out=worker.run_levels();
         end
-        function out=run(obj)
-            b=semcs.configure(obj.Model);s=obj.Sampler;r=b.G.run;
+    end
+    methods(Access=private)
+        function out=run_levels(obj)
+            b=MCMCBase.configure(obj.IntBay);s=obj.Sampler;r=b.G.run;
             validateattributes(r.NumSam,{'numeric'},{'vector','integer','positive','finite'});
             validateattributes(r.MaxIte,{'numeric'},{'scalar','integer','positive','finite'});
             cap=max(1,r.MaxIte-r.level_offset);N=repmat(r.NumSam(1),cap+1,1);
@@ -44,7 +71,7 @@ classdef Engine
                 if isfield(b.G,'sampler_record')
                     records{k}=b.G.sampler_record;before{k}=records{k}.before;after{k}=records{k}.after;
                 else
-                    snapshot=semcs.profile_snapshot(b,'model_initial_samples',struct());
+                    snapshot=MCMCBase.profile_snapshot(b,'model_initial_samples',struct());
                     records{k}=struct('kernel','model_initial_samples','before',snapshot,'after',snapshot);
                     before{k}=snapshot;after{k}=snapshot;
                 end
@@ -66,11 +93,12 @@ classdef Engine
             out=struct('x',{x(1:k)},'y',{y(1:k)},'g',{g(1:k+1)}, ...
                 'Nsam',counts(1:k),'Nsze',shape(1:k,:),'Ncal',calls(1:k), ...
                 'Nite',k,'flg_cvg',converged,'intBay',b,'sampled_final_G',{final(1:k)}, ...
-                'engine','semcs.Engine','schema_version',2,'sampler_records',{records(1:k)}, ...
+                'engine','SeMCS','schema_version',2,'sampler_records',{records(1:k)}, ...
                 'sampler_before',{before(1:k)},'sampler_after',{after(1:k)});
         end
     end
 end
+
 function next=merge(old,preset,initial)
 if ~isstruct(preset),next=old;next.parameters=preset;return;end
 next=overlay(old,preset);

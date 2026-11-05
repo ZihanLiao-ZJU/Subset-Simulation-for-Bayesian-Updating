@@ -53,7 +53,7 @@ classdef SuS_Bay_Nataf
             %   LKF : likelihood function object
             obj.LKF = LKF;
             obj.Ndim = LKF.Ndim;
-            obj=semcs.configure_method_profile(obj,'sus_bayes',method_profile);
+            obj=MCMCBase.configure_method_profile(obj,'sus_bayes',method_profile);
         end
 
         function obj = EvlY(obj, u)
@@ -202,6 +202,14 @@ classdef SuS_Bay_Nataf
 
     end
 
+    methods
+        function obj=prepare_run(obj,sampler)
+            if closed_enabled(obj)
+                assert(isa(sampler,'aCS'),'SuSClosedFallback:Sampler','This opt-in variant requires the existing common aCS.');
+                obj=closed_prepare_run(obj);
+            end
+        end
+    end
     methods(Hidden)
         function yes=closed_policy_enabled(obj),yes=closed_enabled(obj);end
         function obj=prepare_closed_run(obj),obj=closed_prepare_run(obj);end
@@ -241,7 +249,7 @@ function closed_validate_values(logL)
         'SuSClosedFallback:Likelihood','Cached log likelihoods must exclude NaN/+Inf and contain a finite value.');
 end
 function z=closed_reference(b,u)
-    opts=semcs.kernel_options(b,'aCS');
+    opts=MCMCBase.kernel_options(b,'aCS');
     if strcmp(opts.CoordinateMode,'model')
         z=b.to_reference(u);
     else

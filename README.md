@@ -54,11 +54,17 @@ The Bayesian updating problem is reformulated in the spirit of a structural reli
 ├── drive_evidence.m                     % driver: log-evidence estimation over repeated runs
 ├── drive_posterior.m                    % driver: posterior sampling and effective sample size
 ├── SuS_Bay_Nataf.m                      % core: subset simulation for Bayesian updating (intermediate levels, seeds, convergence)
-├── main.m                               % sequential sampling loop (sample generation, level update, seed selection)
+├── SeMCS.m                              % common sequential sampling loop and G-backed run settings
+├── main.m                               % original constructor interface delegating to SeMCS
 ├── NumSim.m                             % post-processing: evidence, posterior resampling, CoV estimates
 ├── Nataf.m                              % Nataf transformation between physical and standard normal space
-├── MCMC-samplers/
-│   └── aCS.m                            % adaptive conditional sampling
+├── MCMC-samplers/                      % common aCS, CW_aMH, HMC, ES and MCMCBase implementations
+│   ├── aCS.m                            % adaptive conditional sampling
+│   ├── CW_aMH.m                         % component-wise adaptive Metropolis
+│   ├── HMC.m                            % Hamiltonian Monte Carlo
+│   ├── ES.m                             % elliptical slice sampling
+│   ├── MCMCBase.m                       % shared target, G and sampler configuration protocol
+│   └── LICENSE                          % shared implementation license
 ├── Likelihood-functions/                % benchmark likelihoods
 ├── support functions/                   % thresholds, weights, CoV correction, plotting and other helpers
 ├── Operations on Logarithmic values/    % log-domain arithmetic (logsum, logplus, logmean, ...)
