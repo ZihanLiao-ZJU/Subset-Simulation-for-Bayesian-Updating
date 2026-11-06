@@ -79,6 +79,8 @@ Fixed MCMC settings, including initial step sizes, acceptance targets, adaptatio
 
 ## Quick start
 
+Set `MaxIte` to the maximum number of sampled levels. A scalar `NumSam` is reused; a vector is a finite per-level budget. The run returns when either limit is reached, and `flg_cvg` reports the method's own convergence criterion. Entries in `G` patch intermediate states; omitted fields and carried `lambda`/`HMC_time` are retained.
+
 1. Add the repository and all its subfolders to the MATLAB path, for example from the repository root:
 
    ```matlab
@@ -146,6 +148,8 @@ Tfun = MyLikelihood;
 The rest of the driver is unchanged.
 
 ## Outputs
+
+The raw sampling history `g` contains `Nite` sampled states followed by one final candidate state. `Nsze` records the chain and step counts at each sampled level.
 
 The post-processing object `out_ps = NumSim(out_ss)` provides both outputs from a single subset simulation run:
 

@@ -1,6 +1,5 @@
 classdef SeMCS
-    % Common sequential sampling, ISD updates and native seed selection.
-
+    % Sequential sampling with native ISD updates and seed selection.
     properties
         Sampler
         IntBay
@@ -11,72 +10,52 @@ classdef SeMCS
         Verbose = true
     end
 
-    properties (Access = private)
-        RunOptions
-    end
-
     methods
         function obj = SeMCS(sampler)
             obj.Sampler = sampler;
             obj.IntBay = sampler.BayStc;
-            obj.RunOptions = struct( ...
-                'MaxIteOffset', -1, ...
-                'MinimumLevels', [], ...
-                'PresetMode', 'replace', ...
-                'PreserveStateFields', {{}}, ...
-                'InitializeProbability', false, ...
-                'SeedFunction', 'SltSed', ...
-                'StopBeforeSeeds', false, ...
-                'OutputSchema', 'levels');
-
-            if isprop(obj.IntBay, 'RunOptions')
-                obj.RunOptions = SeMCS.overlay(obj.RunOptions, obj.IntBay.RunOptions);
-            end
             if isprop(obj.IntBay, 'Nsam')
                 obj.NumSam = obj.IntBay.Nsam;
             end
             if isfield(obj.IntBay.G, 'p')
                 obj.ConPrb = obj.IntBay.G.p;
             end
-            for key = {'NumSam', 'ConPrb', 'MaxIte', 'Verbose'}
-                name = key{1};
-                if isfield(obj.RunOptions, name)
-                    obj.(name) = obj.RunOptions.(name);
-                end
+            if isprop(obj.IntBay, 'MaxIte')
+                obj.MaxIte = obj.IntBay.MaxIte;
+            end
+            if isprop(obj.IntBay, 'Verbose')
+                obj.Verbose = obj.IntBay.Verbose;
             end
         end
 
         function out = RunIte(obj)
-            options = obj.RunOptions;
+            % MaxIte bounds sampled levels; a vector NumSam is a finite plan.
+            validateattributes(obj.MaxIte, {'numeric'}, {'scalar', 'integer', 'positive', 'finite'});
+            validateattributes(obj.NumSam, {'numeric'}, {'vector', 'integer', 'positive', 'finite', 'nonempty'});
+            validateattributes(obj.ConPrb, {'numeric'}, {'scalar', '>', 0, '<', 1});
+            targets = double(obj.NumSam(:));
+            maxi = obj.MaxIte;
+            if numel(targets) == 1
+                targets = repmat(targets, maxi, 1);
+            else
+                maxi = min(maxi, numel(targets));
+            end
+
             intBay = obj.IntBay;
             sampler = obj.Sampler;
-            maxi = obj.MaxIte + options.MaxIteOffset;
-            if ~isempty(options.MinimumLevels)
-                maxi = max(options.MinimumLevels, maxi);
-            end
-
-            if options.InitializeProbability
-                intBay.G.p = obj.ConPrb;
+            intBay.G.p = obj.ConPrb;
+            if ~isempty(obj.G)
+                intBay.G = SeMCS.prescribed_state(intBay.G, obj.G{1}, true);
             end
             if ismethod(intBay, 'start_run')
-                intBay = intBay.start_run(obj.NumSam, obj.MaxIte, obj.ConPrb, obj.G);
-            end
-
-            targets = zeros(obj.MaxIte + 1, 1);
-            if numel(obj.NumSam) > 1
-                targets(1:numel(obj.NumSam)) = obj.NumSam;
-            else
-                targets(:) = obj.NumSam;
-            end
-            if ~ismethod(intBay, 'start_run') && ~isempty(obj.G)
-                intBay.G = SeMCS.prescribed_state(intBay.G, obj.G{1}, true, ...
-                    options.PresetMode, options.PreserveStateFields);
+                intBay = intBay.start_run();
             end
             sampler.BayStc = intBay;
+            candidate_domain = ismethod(intBay, 'update');
 
             x = {};
             y = {};
-            g = {intBay.G};
+            g = {};
             Nsam = [];
             Nsze = zeros(0, 2);
             Ncal = [];
@@ -85,115 +64,96 @@ classdef SeMCS
             nc = targets(1);
             steps = 1;
             flg_cvg = false;
-            probabilities = [];
 
             for ite = 1:maxi
-                % 1. Generate samples from the current ISD.
+                % 1. Sample the current ISD and retain the actual chain shape.
                 if ismethod(intBay, 'sample_level')
                     [x{ite, 1}, y{ite, 1}, Ncal(ite, 1), intBay] = ...
-                        intBay.sample_level(sampler, obj.NumSam, x_seed, y_seed, steps, ite);
-                    Nsam(ite, 1) = numel(y{ite}(4, :));
-                    Nsze(ite, :) = [size(x{ite}, 2), 1];
-                    g{ite, 1} = intBay.G;
+                        intBay.sample_level(sampler, targets(ite), x_seed, y_seed, steps, ite);
+                elseif ite == 1
+                    [x{ite, 1}, y{ite, 1}, Ncal(ite, 1), intBay] = sampler.SamGen(nc, steps);
                 else
-                    if ite == 1
-                        [x{ite, 1}, y{ite, 1}, Ncal(ite, 1), intBay] = sampler.SamGen(nc, steps);
-                    else
-                        [x{ite, 1}, y{ite, 1}, Ncal(ite, 1), intBay] = sampler.SamGen(x_seed, y_seed, steps);
-                    end
-                    Nsam(ite, 1) = nc * steps;
-                    Nsze(ite, :) = [nc, steps];
+                    [x{ite, 1}, y{ite, 1}, Ncal(ite, 1), intBay] = sampler.SamGen(x_seed, y_seed, steps);
                 end
+                Nsze(ite, :) = [size(x{ite}, 2), size(x{ite}, 3)];
+                Nsam(ite, 1) = prod(Nsze(ite, :));
+                g{ite, 1} = intBay.G;
 
-                % 2. Update the ISD. ReSuS constructs a separate candidate domain.
-                if ismethod(intBay, 'update')
-                    next = intBay.update(y{ite}(4, :), y{ite}(3, :), obj.ConPrb);
+                % 2. Form the next ISD; a prescribed G patches the full state.
+                if candidate_domain
+                    next = intBay;
+                    if ite + 1 <= numel(obj.G)
+                        next.G = SeMCS.prescribed_state(next.G, obj.G{ite + 1}, false);
+                    else
+                        next = intBay.update(y{ite}(4, :), y{ite}(3, :), intBay.G.p);
+                    end
                     g{ite + 1, 1} = next.G;
+                    if next.converged()
+                        flg_cvg = true;
+                        break;
+                    end
                 else
                     if ite + 1 <= numel(obj.G)
-                        intBay.G = SeMCS.prescribed_state(intBay.G, obj.G{ite + 1}, false, ...
-                            options.PresetMode, options.PreserveStateFields);
+                        intBay.G = SeMCS.prescribed_state(intBay.G, obj.G{ite + 1}, false);
                         extra = 0;
                     else
-                        [y{ite}, ~, intBay, extra] = intBay.UpdObj(x{ite}, y{ite}, obj.ConPrb);
+                        [y{ite}, ~, intBay, extra] = intBay.UpdObj(x{ite}, y{ite}, intBay.G.p);
                     end
                     Ncal(ite) = Ncal(ite) + extra;
                     g{ite + 1, 1} = intBay.G;
                     sampler.BayStc = intBay;
                 end
 
-                % The hybrid-domain method checks its candidate before selection.
-                if options.StopBeforeSeeds
-                    if next.converged()
-                        flg_cvg = true;
-                        break;
-                    elseif numel(x) == maxi
-                        break;
+                % No next chain is needed at the final allocated level.
+                if ite == maxi
+                    if ~candidate_domain
+                        flg_cvg = intBay.FlgCvg;
                     end
+                    break;
                 end
 
-                % 3. Select the next seeds using the original numerical rule.
-                if ismethod(intBay, 'select_run_seeds')
-                    [x_seed, y_seed, steps, intBay, probability] = ...
-                        next.select_run_seeds(x{ite}, y{ite}, intBay, obj.NumSam);
-                    probabilities(end + 1) = probability;
+                % 3. The native method chooses seeds; there is no seed router.
+                if candidate_domain
+                    [x_seed, y_seed, steps, intBay] = ...
+                        next.select_run_seeds(x{ite}, y{ite}, intBay, targets(ite + 1));
+                    g{ite + 1, 1} = intBay.G;
                 else
-                    if targets(ite + 1) <= 0
-                        error('SeMCS:ScheduleExhausted', 'Sample budget exhausted before seed selection.');
-                    end
-                    target = targets(ite + 1);
-                    if strcmp(options.SeedFunction, 'SltSed')
-                        [x_seed, y_seed] = intBay.SltSed(x{ite}, y{ite}, target);
-                    else
-                        [x_seed, y_seed] = SedSlt(intBay, x{ite}, y{ite}, target);
-                    end
+                    [x_seed, y_seed] = SedSlt(intBay, x{ite}, y{ite}, targets(ite + 1));
                     nc = size(x_seed, 2);
-                    steps = round(target / nc);
+                    steps = round(targets(ite + 1) / nc);
                     if obj.Verbose
                         fprintf('Level %d: N=%d, chains=%d, steps=%d, calls=%d\n', ...
                             ite, Nsam(ite), Nsze(ite, 1), Nsze(ite, 2), Ncal(ite));
                     end
+                    flg_cvg = intBay.FlgCvg;
+                    if flg_cvg || nc <= 0
+                        break;
+                    end
                 end
                 sampler.BayStc = intBay;
-
-                % 4. Preserve empty-seed/cap priority over native convergence.
-                if ~options.StopBeforeSeeds
-                    if nc <= 0 || numel(x) == maxi
-                        break;
-                    end
-                    flg_cvg = intBay.FlgCvg;
-                    if flg_cvg
-                        break;
-                    end
-                end
             end
 
+            % g{1:Nite} are sampled states; g{Nite+1} is the last candidate.
             out = struct('x', {x}, 'y', {y}, 'g', {g}, ...
                 'Nsam', Nsam, 'Nsze', Nsze, 'Ncal', Ncal, ...
-                'Nite', numel(x), 'flg_cvg', flg_cvg, 'intBay', intBay);
-            if strcmp(options.OutputSchema, 'probability_product')
-                out.conditional_probabilities = probabilities;
-                out.sampler = class(sampler);
-                out.profile = intBay.profile;
-            end
+                'Nite', numel(x), 'flg_cvg', flg_cvg, ...
+                'intBay', intBay, 'sampler', class(sampler));
         end
     end
 
     methods (Static)
-        function next = prescribed_state(old, preset, initial, mode, retained)
-            if nargin < 5
-                retained = {};
-            end
-            if ~isstruct(preset)
+        function next = prescribed_state(old, preset, initial)
+            if isstruct(preset)
+                next = old;
+                for key = fieldnames(preset)'
+                    name = key{1};
+                    next.(name) = preset.(name);
+                end
+            else
                 next = old;
                 next.parameters = preset;
-            elseif strcmp(mode, 'replace')
-                next = preset;
-            else
-                next = SeMCS.overlay(old, preset);
             end
-
-            % Keep the actually adapted proposal values in later schedules.
+            % Scheduled density changes do not reset live proposal adaptation.
             if ~initial
                 for key = {'lambda', 'HMC_time'}
                     name = key{1};
@@ -202,25 +162,7 @@ classdef SeMCS
                     end
                 end
             end
-
-            for key = retained
-                name = key{1};
-                if ~isfield(next, name)
-                    next.(name) = old.(name);
-                end
-            end
         end
 
-        function result = overlay(result, patch)
-            for key = fieldnames(patch)'
-                name = key{1};
-                value = patch.(name);
-                if isfield(result, name) && isstruct(result.(name)) && isstruct(value)
-                    result.(name) = SeMCS.overlay(result.(name), value);
-                else
-                    result.(name) = value;
-                end
-            end
-        end
     end
 end

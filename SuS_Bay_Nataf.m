@@ -1,10 +1,6 @@
 classdef SuS_Bay_Nataf
     % Subset simulation with Nataf transformation for Bayesian updating
 
-    properties (Constant)
-        RunOptions = struct('InitializeProbability', true, 'PresetMode', 'overlay', 'MinimumLevels', 1, 'SeedFunction', 'SltSed')
-    end
-
     properties
         % LKF     : Likelihood function object (must implement EvlLKF and Pdis.U2X)
         % Nfun    : Number of outputs per sample (default: 4)
@@ -116,7 +112,7 @@ classdef SuS_Bay_Nataf
             N_cal = 0;
         end
 
-        function [u_sed, y_sed] = SltSed(obj, u, y, Nsam)
+        function [u_sed, y_sed] = SedSlt(obj, u, y, Nsam)
             % Select seed samples for next iteration
             u = u(1:obj.Ndim,:);
             y = y(1:obj.Nfun,:);
