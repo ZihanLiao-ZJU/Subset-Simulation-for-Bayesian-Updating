@@ -1,5 +1,5 @@
 classdef SeMCS
-    % Common sequential sampling, native model updates and seed selection.
+    % Common sequential sampling, ISD updates and native seed selection.
 
     properties
         Sampler
@@ -24,7 +24,7 @@ classdef SeMCS
                 'MinimumLevels', [], ...
                 'PresetMode', 'replace', ...
                 'PreserveStateFields', {{}}, ...
-                'UpdateOutputs', 4, ...
+                'InitializeProbability', false, ...
                 'SeedFunction', 'SltSed', ...
                 'StopBeforeSeeds', false, ...
                 'OutputSchema', 'levels');
@@ -48,19 +48,18 @@ classdef SeMCS
 
         function out = RunIte(obj)
             options = obj.RunOptions;
-            model = obj.IntBay;
+            intBay = obj.IntBay;
             sampler = obj.Sampler;
-            limit = obj.MaxIte + options.MaxIteOffset;
+            maxi = obj.MaxIte + options.MaxIteOffset;
             if ~isempty(options.MinimumLevels)
-                limit = max(options.MinimumLevels, limit);
+                maxi = max(options.MinimumLevels, maxi);
             end
 
-            % The two-output native update uses the evolving G.p.
-            if options.UpdateOutputs == 2
-                model.G.p = obj.ConPrb;
+            if options.InitializeProbability
+                intBay.G.p = obj.ConPrb;
             end
-            if ismethod(model, 'start_run')
-                model = model.start_run(obj);
+            if ismethod(intBay, 'start_run')
+                intBay = intBay.start_run(obj.NumSam, obj.MaxIte, obj.ConPrb, obj.G);
             end
 
             targets = zeros(obj.MaxIte + 1, 1);
@@ -69,136 +68,113 @@ classdef SeMCS
             else
                 targets(:) = obj.NumSam;
             end
-
-            if options.UpdateOutputs ~= 1 && ~isempty(obj.G)
-                model.G = SeMCS.prescribed_state(model.G, obj.G{1}, true, ...
+            if ~ismethod(intBay, 'start_run') && ~isempty(obj.G)
+                intBay.G = SeMCS.prescribed_state(intBay.G, obj.G{1}, true, ...
                     options.PresetMode, options.PreserveStateFields);
             end
-            sampler.BayStc = model;
+            sampler.BayStc = intBay;
 
-            context = struct( ...
-                'owner', obj, ...
-                'model', model, ...
-                'sampler', sampler, ...
-                'limit', limit, ...
-                'targets', targets, ...
-                'nc', targets(1), ...
-                'steps', 1, ...
-                'xs', [], ...
-                'ys', [], ...
-                'x', {{}}, ...
-                'y', {{}}, ...
-                'g', {{model.G}}, ...
-                'Nsam', [], ...
-                'Nsze', zeros(0, 2), ...
-                'Ncal', [], ...
-                'complete', false);
-            if strcmp(options.OutputSchema, 'probability_product')
-                context.conditional_probabilities = [];
-            end
+            x = {};
+            y = {};
+            g = {intBay.G};
+            Nsam = [];
+            Nsze = zeros(0, 2);
+            Ncal = [];
+            x_seed = [];
+            y_seed = [];
+            nc = targets(1);
+            steps = 1;
+            flg_cvg = false;
+            probabilities = [];
 
-            for level = 1:limit
-                % SamGen: draw initial samples or continue the current chains.
-                if ismethod(context.model, 'sample_level')
-                    [context, record] = context.model.sample_level(context, level);
-                    context.g{level, 1} = context.model.G;
+            for ite = 1:maxi
+                % 1. Generate samples from the current ISD.
+                if ismethod(intBay, 'sample_level')
+                    [x{ite, 1}, y{ite, 1}, Ncal(ite, 1), intBay] = ...
+                        intBay.sample_level(sampler, obj.NumSam, x_seed, y_seed, steps, ite);
+                    Nsam(ite, 1) = numel(y{ite}(4, :));
+                    Nsze(ite, :) = [size(x{ite}, 2), 1];
+                    g{ite, 1} = intBay.G;
                 else
-                    if level == 1
-                        [x, y, calls, context.model] = context.sampler.SamGen(context.nc, context.steps);
+                    if ite == 1
+                        [x{ite, 1}, y{ite, 1}, Ncal(ite, 1), intBay] = sampler.SamGen(nc, steps);
                     else
-                        [x, y, calls, context.model] = context.sampler.SamGen(context.xs, context.ys, context.steps);
+                        [x{ite, 1}, y{ite, 1}, Ncal(ite, 1), intBay] = sampler.SamGen(x_seed, y_seed, steps);
                     end
-                    record = struct( ...
-                        'x', x, ...
-                        'y', y, ...
-                        'calls', calls, ...
-                        'count', context.nc * context.steps, ...
-                        'shape', [context.nc, context.steps]);
+                    Nsam(ite, 1) = nc * steps;
+                    Nsze(ite, :) = [nc, steps];
                 end
 
-                context.x{level, 1} = record.x;
-                context.y{level, 1} = record.y;
-                context.Nsam(level, 1) = record.count;
-                context.Nsze(level, :) = record.shape;
-                context.Ncal(level, 1) = record.calls;
-
-                % UpdObj / update: retain each native numerical interface.
-                if options.UpdateOutputs == 1
-                    context.next = context.model.update(record.values, record.logpdf, obj.ConPrb);
-                    context.g{level + 1, 1} = context.next.G;
+                % 2. Update the ISD. ReSuS constructs a separate candidate domain.
+                if ismethod(intBay, 'update')
+                    next = intBay.update(y{ite}(4, :), y{ite}(3, :), obj.ConPrb);
+                    g{ite + 1, 1} = next.G;
                 else
-                    if level + 1 <= numel(obj.G)
-                        context.model.G = SeMCS.prescribed_state(context.model.G, obj.G{level + 1}, false, ...
+                    if ite + 1 <= numel(obj.G)
+                        intBay.G = SeMCS.prescribed_state(intBay.G, obj.G{ite + 1}, false, ...
                             options.PresetMode, options.PreserveStateFields);
                         extra = 0;
-                    elseif options.UpdateOutputs == 2
-                        [~, context.model] = context.model.UpdObj(record.y, context.model.G.p);
-                        extra = 0;
                     else
-                        [context.y{level}, ~, context.model, extra] = context.model.UpdObj(record.x, record.y, obj.ConPrb);
+                        [y{ite}, ~, intBay, extra] = intBay.UpdObj(x{ite}, y{ite}, obj.ConPrb);
                     end
-                    context.Ncal(level) = context.Ncal(level) + extra;
-                    context.g{level + 1, 1} = context.model.G;
-                    context.sampler.BayStc = context.model;
+                    Ncal(ite) = Ncal(ite) + extra;
+                    g{ite + 1, 1} = intBay.G;
+                    sampler.BayStc = intBay;
                 end
 
-                % This native domain update checks convergence before seeds.
+                % The hybrid-domain method checks its candidate before selection.
                 if options.StopBeforeSeeds
-                    if context.next.converged()
-                        context.complete = true;
+                    if next.converged()
+                        flg_cvg = true;
                         break;
-                    elseif numel(context.x) == limit
+                    elseif numel(x) == maxi
                         break;
                     end
                 end
 
-                % SltSed / SedSlt / select_seeds: choose next-level seeds.
-                if ismethod(context.model, 'select_run_seeds')
-                    context = context.model.select_run_seeds(context, record, level);
+                % 3. Select the next seeds using the original numerical rule.
+                if ismethod(intBay, 'select_run_seeds')
+                    [x_seed, y_seed, steps, intBay, probability] = ...
+                        next.select_run_seeds(x{ite}, y{ite}, intBay, obj.NumSam);
+                    probabilities(end + 1) = probability;
                 else
-                    if targets(level + 1) <= 0
+                    if targets(ite + 1) <= 0
                         error('SeMCS:ScheduleExhausted', 'Sample budget exhausted before seed selection.');
                     end
-                    target = targets(level + 1);
+                    target = targets(ite + 1);
                     if strcmp(options.SeedFunction, 'SltSed')
-                        [context.xs, context.ys] = context.model.SltSed(record.x, context.y{level}, target);
+                        [x_seed, y_seed] = intBay.SltSed(x{ite}, y{ite}, target);
                     else
-                        [context.xs, context.ys] = SedSlt(context.model, record.x, context.y{level}, target);
+                        [x_seed, y_seed] = SedSlt(intBay, x{ite}, y{ite}, target);
                     end
-                    context.nc = size(context.xs, 2);
-                    context.steps = round(target / context.nc);
+                    nc = size(x_seed, 2);
+                    steps = round(target / nc);
                     if obj.Verbose
                         fprintf('Level %d: N=%d, chains=%d, steps=%d, calls=%d\n', ...
-                            level, record.count, record.shape(1), record.shape(2), context.Ncal(level));
+                            ite, Nsam(ite), Nsze(ite, 1), Nsze(ite, 2), Ncal(ite));
                     end
                 end
-                context.sampler.BayStc = context.model;
+                sampler.BayStc = intBay;
 
+                % 4. Preserve empty-seed/cap priority over native convergence.
                 if ~options.StopBeforeSeeds
-                    if context.nc <= 0 || numel(context.x) == limit
+                    if nc <= 0 || numel(x) == maxi
                         break;
                     end
-                    context.complete = context.model.FlgCvg;
-                    if context.complete
+                    flg_cvg = intBay.FlgCvg;
+                    if flg_cvg
                         break;
                     end
                 end
             end
 
-            out = struct( ...
-                'x', {context.x}, ...
-                'y', {context.y}, ...
-                'g', {context.g}, ...
-                'Nsam', context.Nsam, ...
-                'Nsze', context.Nsze, ...
-                'Ncal', context.Ncal, ...
-                'Nite', numel(context.x), ...
-                'flg_cvg', context.complete, ...
-                'intBay', context.model);
+            out = struct('x', {x}, 'y', {y}, 'g', {g}, ...
+                'Nsam', Nsam, 'Nsze', Nsze, 'Ncal', Ncal, ...
+                'Nite', numel(x), 'flg_cvg', flg_cvg, 'intBay', intBay);
             if strcmp(options.OutputSchema, 'probability_product')
-                out.conditional_probabilities = context.conditional_probabilities;
-                out.sampler = class(context.sampler);
-                out.profile = context.model.profile;
+                out.conditional_probabilities = probabilities;
+                out.sampler = class(sampler);
+                out.profile = intBay.profile;
             end
         end
     end
