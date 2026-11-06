@@ -47,11 +47,8 @@ classdef SeMCS
             if ~isempty(obj.G)
                 intBay.G = SeMCS.prescribed_state(intBay.G, obj.G{1}, true);
             end
-            if ismethod(intBay, 'start_run')
-                intBay = intBay.start_run();
-            end
             sampler.BayStc = intBay;
-            candidate_domain = ismethod(intBay, 'update');
+            stop_before_seeds = isprop(intBay, 'StopBeforeSeeds') && intBay.StopBeforeSeeds;
 
             x = {};
             y = {};
@@ -67,10 +64,7 @@ classdef SeMCS
 
             for ite = 1:maxi
                 % 1. Sample the current ISD and retain the actual chain shape.
-                if ismethod(intBay, 'sample_level')
-                    [x{ite, 1}, y{ite, 1}, Ncal(ite, 1), intBay] = ...
-                        intBay.sample_level(sampler, targets(ite), x_seed, y_seed, steps, ite);
-                elseif ite == 1
+                if ite == 1
                     [x{ite, 1}, y{ite, 1}, Ncal(ite, 1), intBay] = sampler.SamGen(nc, steps);
                 else
                     [x{ite, 1}, y{ite, 1}, Ncal(ite, 1), intBay] = sampler.SamGen(x_seed, y_seed, steps);
@@ -80,55 +74,34 @@ classdef SeMCS
                 g{ite, 1} = intBay.G;
 
                 % 2. Form the next ISD; a prescribed G patches the full state.
-                if candidate_domain
-                    next = intBay;
-                    if ite + 1 <= numel(obj.G)
-                        next.G = SeMCS.prescribed_state(next.G, obj.G{ite + 1}, false);
-                    else
-                        next = intBay.update(y{ite}(4, :), y{ite}(3, :), intBay.G.p);
-                    end
-                    g{ite + 1, 1} = next.G;
-                    if next.converged()
-                        flg_cvg = true;
-                        break;
-                    end
+                if ite + 1 <= numel(obj.G)
+                    intBay.G = SeMCS.prescribed_state(intBay.G, obj.G{ite + 1}, false);
+                    extra = 0;
                 else
-                    if ite + 1 <= numel(obj.G)
-                        intBay.G = SeMCS.prescribed_state(intBay.G, obj.G{ite + 1}, false);
-                        extra = 0;
-                    else
-                        [y{ite}, ~, intBay, extra] = intBay.UpdObj(x{ite}, y{ite}, intBay.G.p);
-                    end
-                    Ncal(ite) = Ncal(ite) + extra;
-                    g{ite + 1, 1} = intBay.G;
-                    sampler.BayStc = intBay;
+                    [y{ite}, ~, intBay, extra] = intBay.UpdObj(x{ite}, y{ite}, intBay.G.p);
                 end
+                Ncal(ite) = Ncal(ite) + extra;
+                g{ite + 1, 1} = intBay.G;
+                sampler.BayStc = intBay;
 
-                % No next chain is needed at the final allocated level.
-                if ite == maxi
-                    if ~candidate_domain
-                        flg_cvg = intBay.FlgCvg;
-                    end
+                % A completed ReSuS domain needs no seeds; ordinary methods
+                % retain their native stop after the seed operation.
+                if ite == maxi || (stop_before_seeds && intBay.FlgCvg)
+                    flg_cvg = intBay.FlgCvg;
                     break;
                 end
 
                 % 3. The native method chooses seeds; there is no seed router.
-                if candidate_domain
-                    [x_seed, y_seed, steps, intBay] = ...
-                        next.select_run_seeds(x{ite}, y{ite}, intBay, targets(ite + 1));
-                    g{ite + 1, 1} = intBay.G;
-                else
-                    [x_seed, y_seed] = SedSlt(intBay, x{ite}, y{ite}, targets(ite + 1));
-                    nc = size(x_seed, 2);
-                    steps = round(targets(ite + 1) / nc);
-                    if obj.Verbose
-                        fprintf('Level %d: N=%d, chains=%d, steps=%d, calls=%d\n', ...
-                            ite, Nsam(ite), Nsze(ite, 1), Nsze(ite, 2), Ncal(ite));
-                    end
-                    flg_cvg = intBay.FlgCvg;
-                    if flg_cvg || nc <= 0
-                        break;
-                    end
+                [x_seed, y_seed] = SedSlt(intBay, x{ite}, y{ite}, targets(ite + 1));
+                nc = size(x_seed, 2);
+                steps = round(targets(ite + 1) / nc);
+                if obj.Verbose
+                    fprintf('Level %d: N=%d, chains=%d, steps=%d, calls=%d\n', ...
+                        ite, Nsam(ite), Nsze(ite, 1), Nsze(ite, 2), Ncal(ite));
+                end
+                flg_cvg = intBay.FlgCvg;
+                if flg_cvg || nc <= 0
+                    break;
                 end
                 sampler.BayStc = intBay;
             end
