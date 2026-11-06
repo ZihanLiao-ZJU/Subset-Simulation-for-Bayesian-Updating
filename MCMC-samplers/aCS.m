@@ -21,14 +21,13 @@ classdef aCS < MCMCBase
 
         function [u, y, Ncal, b] = SamGen(obj, varargin)
             [b, u0, y0, Ncal, save, L, Nc, Ns] = obj.prepare(varargin{:});
-            opts = obj.configuration_options();
             d = b.Ndim;
             u = zeros(d, Nc, Ns);
             y = zeros(b.Nfun, Nc, Ns);
-            unit = strcmp(opts.Sigma0Mode, 'unit');
+            unit = strcmp(obj.Sigma0Mode, 'unit');
             identity = isequal(L, eye(d));
-            mapped = strcmp(opts.CoordinateMode, 'model');
-            assert(unit || strcmp(opts.Sigma0Mode, 'seed_std'), 'aCS:Sigma0Mode', 'Choose unit or seed_std');
+            mapped = strcmp(obj.CoordinateMode, 'model');
+            assert(unit || strcmp(obj.Sigma0Mode, 'seed_std'), 'aCS:Sigma0Mode', 'Choose unit or seed_std');
             if (unit || identity) && ~mapped
                 v = reshape(L * reshape(randn(d, Nc, Ns), d, []), d, Nc, Ns);
             else
@@ -39,7 +38,7 @@ classdef aCS < MCMCBase
             if unit
                 sigma0 = 1;
                 if mapped
-                    z0 = obj.to_reference(b, u0, L, opts);
+                    z0 = obj.to_reference(b, u0, L);
                 else
                     z0 = [];
                 end
@@ -47,16 +46,16 @@ classdef aCS < MCMCBase
                 if identity && ~mapped
                     z0 = u0;
                 else
-                    z0 = obj.to_reference(b, u0, L, opts);
+                    z0 = obj.to_reference(b, u0, L);
                 end
 
                 sigma0 = max(std(z0, 0, 2), eps);
             end
 
-            if opts.CarryLambda
-                lambda = obj.state(b, 'lambda', opts.Lambda);
+            if obj.CarryLambda
+                lambda = obj.state(b, 'lambda', obj.Lambda);
             else
-                lambda = opts.Lambda;
+                lambda = obj.Lambda;
             end
 
             if ~isscalar(lambda) || ~isfinite(lambda) || lambda <= 0
@@ -64,9 +63,9 @@ classdef aCS < MCMCBase
             end
 
             b.G.lambda = lambda;
-            width = max(ceil(Nc / opts.NumIte), 1);
-            if strcmp(opts.GroupMode, 'fixed')
-                rounds = opts.NumIte;
+            width = max(ceil(Nc / obj.NumIte), 1);
+            if strcmp(obj.GroupMode, 'fixed')
+                rounds = obj.NumIte;
             else
                 rounds = ceil(Nc / width);
             end
@@ -99,7 +98,7 @@ classdef aCS < MCMCBase
                         proposal = rho .* u0(:, ids) + sigma .* v(:, ids, k);
                     else
                         zp = rho .* z0(:, ids) + sigma .* v(:, ids, k);
-                        proposal = obj.from_reference(b, zp, L, opts);
+                        proposal = obj.from_reference(b, zp, L);
                     end
 
                     [b, yp, nn] = obj.evaluate(b, proposal);
@@ -118,14 +117,14 @@ classdef aCS < MCMCBase
                     attempts = attempts + numel(ids);
                 end
 
-                if opts.Adapt && attempts > 0
-                    if strcmp(opts.AcceptanceRateMode, 'chain_steps')
+                if obj.Adapt && attempts > 0
+                    if strcmp(obj.AcceptanceRateMode, 'chain_steps')
                         rate = count / numel(ids) / Ns;
                     else
                         rate = count / attempts;
                     end
 
-                    lambda = exp(log(lambda) + (rate - opts.AcpOpt) / sqrt(group));
+                    lambda = exp(log(lambda) + (rate - obj.AcpOpt) / sqrt(group));
                 end
             end
 

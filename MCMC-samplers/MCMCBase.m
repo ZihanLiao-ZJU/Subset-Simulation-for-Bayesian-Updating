@@ -44,19 +44,6 @@ classdef MCMCBase
             end
         end
 
-        function opts = configuration_options(obj)
-            opts = struct();
-            names = properties(obj);
-
-            for j = 1:numel(names)
-                name = names{j};
-                if any(strcmp(name, {'BayStc', 'Ndim', 'Nfun'}))
-                    continue;
-                end
-
-                opts.(name) = obj.(name);
-            end
-        end
 
         function [b, u, y, n, save, L, Nc, Ns] = prepare(obj, varargin)
             b = obj.BayStc;
@@ -125,16 +112,16 @@ classdef MCMCBase
             end
         end
 
-        function z = to_reference(~, b, u, L, opts)
-            if strcmp(opts.CoordinateMode, 'model')
+        function z = to_reference(obj, b, u, L)
+            if strcmp(obj.CoordinateMode, 'model')
                 z = b.to_reference(u);
             else
                 z = L \ u;
             end
         end
 
-        function u = from_reference(~, b, z, L, opts)
-            if strcmp(opts.CoordinateMode, 'model')
+        function u = from_reference(obj, b, z, L)
+            if strcmp(obj.CoordinateMode, 'model')
                 u = b.from_reference(z);
             else
                 u = L * z;

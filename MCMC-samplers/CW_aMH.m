@@ -18,7 +18,6 @@ classdef CW_aMH < MCMCBase
 
         function [u, y, Ncal, b] = SamGen(obj, varargin)
             [b, u0, y0, Ncal, save, L, Nc, Ns] = obj.prepare(varargin{:});
-            opts = obj.configuration_options();
             d = b.Ndim;
             z0 = L \ u0;
             u = zeros(d, Nc, Ns);
@@ -35,7 +34,7 @@ classdef CW_aMH < MCMCBase
                 end
 
                 z = z0 + sigma .* du(:,:, k);
-                if strcmp(opts.PriorMode, 'model')
+                if strcmp(obj.PriorMode, 'model')
                     fresh = zeros(size(z));
                     old = fresh;
 

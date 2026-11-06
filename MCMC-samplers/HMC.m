@@ -15,18 +15,17 @@ classdef HMC < MCMCBase
 
         function [u, y, Ncal, b] = SamGen(obj, varargin)
             [b, u0, y0, Ncal, save, L, Nc, Ns] = obj.prepare(varargin{:});
-            opts = obj.configuration_options();
             d = b.Ndim;
             u = zeros(d, Nc, Ns);
             y = zeros(b.Nfun, Nc, Ns);
             v = reshape(L * reshape(randn(d, Nc, Ns), d, []), d, Nc, Ns);
             p = rand(1, Nc, Ns);
-            time = obj.state(b, 'HMC_time', opts.InitialTime);
+            time = obj.state(b, 'HMC_time', obj.InitialTime);
             if ~isscalar(time) || ~isfinite(time) || time <= 0 || time > pi / 2
                 error('HMC:State', 'G.HMC_time must lie in (0,pi/2].');
             end
 
-            width = max(ceil(Nc / opts.NumIte), 1);
+            width = max(ceil(Nc / obj.NumIte), 1);
 
             for start = 1:width:Nc
                 ids = start:min(start + width - 1, Nc);
@@ -53,7 +52,7 @@ classdef HMC < MCMCBase
                     attempts = attempts + numel(ids);
                 end
 
-                if attempts > 0 && opts.Adapt
+                if attempts > 0 && obj.Adapt
                     rate = count / attempts;
                     if rate < .3
                         time = asin(min(1, sin(time) * exp((rate - .3) / 2)));

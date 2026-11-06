@@ -1,5 +1,5 @@
 classdef SeMCS
-    % Common sequential sampling loop; each model owns its level policies.
+    % Common sequential sampling, native model updates and seed selection.
 
     properties
         Sampler
@@ -11,86 +11,73 @@ classdef SeMCS
         Verbose = true
     end
 
+    properties (Access = private)
+        RunOptions
+    end
+
     methods
         function obj = SeMCS(sampler)
             obj.Sampler = sampler;
             obj.IntBay = sampler.BayStc;
+            obj.RunOptions = struct( ...
+                'MaxIteOffset', -1, ...
+                'MinimumLevels', [], ...
+                'PresetMode', 'replace', ...
+                'PreserveStateFields', {{}}, ...
+                'UpdateOutputs', 4, ...
+                'SeedFunction', 'SltSed', ...
+                'StopBeforeSeeds', false, ...
+                'OutputSchema', 'levels');
 
-            defaults = obj.IntBay.run_defaults();
-            for name = fieldnames(defaults)'
-                obj.(name{1}) = defaults.(name{1});
+            if isprop(obj.IntBay, 'RunOptions')
+                obj.RunOptions = SeMCS.overlay(obj.RunOptions, obj.IntBay.RunOptions);
+            end
+            if isprop(obj.IntBay, 'Nsam')
+                obj.NumSam = obj.IntBay.Nsam;
+            end
+            if isfield(obj.IntBay.G, 'p')
+                obj.ConPrb = obj.IntBay.G.p;
+            end
+            for key = {'NumSam', 'ConPrb', 'MaxIte', 'Verbose'}
+                name = key{1};
+                if isfield(obj.RunOptions, name)
+                    obj.(name) = obj.RunOptions.(name);
+                end
             end
         end
 
         function out = RunIte(obj)
-            % Initialize the model and the run-local sampling history.
-            context = obj.IntBay.start_run(obj, obj.Sampler);
-
-            for level = 1:context.limit
-                % SamGen: draw initial samples or continue the current chains.
-                if ismethod(context.model, 'sample_level')
-                    [context, record] = context.model.sample_level(context, level);
-                else
-                    if level == 1
-                        [x, y, calls, model] = context.sampler.SamGen(context.nc, context.steps);
-                    else
-                        [x, y, calls, model] = context.sampler.SamGen(context.xs, context.ys, context.steps);
-                    end
-                    context.model = model;
-
-                    record = struct( ...
-                        'x', x, ...
-                        'y', y, ...
-                        'calls', calls, ...
-                        'count', context.nc * context.steps, ...
-                        'shape', [context.nc, context.steps]);
-
-                    context.x{level, 1} = x;
-                    context.y{level, 1} = y;
-                    context.Nsam(level, 1) = record.count;
-                    context.Nsze(level, :) = record.shape;
-                    context.Ncal(level, 1) = calls;
-                end
-
-                % UpdObj / update: advance the intermediate distribution.
-                context = context.model.advance_level(context, record, level);
-
-                % Each model retains its original seed/stop ordering.
-                [done, context] = context.model.run_complete(context, record, 'before_seeds');
-                if done
-                    break;
-                end
-
-                % SltSed / SedSlt / select_seeds: choose seeds for the next level.
-                context = context.model.select_run_seeds(context, record, level);
-                [done, context] = context.model.run_complete(context, record, 'after_seeds');
-                if done
-                    break;
-                end
+            options = obj.RunOptions;
+            model = obj.IntBay;
+            sampler = obj.Sampler;
+            limit = obj.MaxIte + options.MaxIteOffset;
+            if ~isempty(options.MinimumLevels)
+                limit = max(options.MinimumLevels, limit);
             end
 
-            out = context.model.finish_run(context);
-        end
-    end
+            % The two-output native update uses the evolving G.p.
+            if options.UpdateOutputs == 2
+                model.G.p = obj.ConPrb;
+            end
+            if ismethod(model, 'start_run')
+                model = model.start_run(obj);
+            end
 
-    methods(Static)
-        function context = start_context(owner, sampler, limit, mode)
-            model = owner.IntBay;
-            targets = zeros(owner.MaxIte + 1, 1);
-
-            if numel(owner.NumSam) > 1
-                targets(1:numel(owner.NumSam)) = owner.NumSam;
+            targets = zeros(obj.MaxIte + 1, 1);
+            if numel(obj.NumSam) > 1
+                targets(1:numel(obj.NumSam)) = obj.NumSam;
             else
-                targets(:) = owner.NumSam;
+                targets(:) = obj.NumSam;
             end
 
-            if ~isempty(owner.G)
-                model.G = SeMCS.prescribed_state(model.G, owner.G{1}, true, mode);
+            if options.UpdateOutputs ~= 1 && ~isempty(obj.G)
+                model.G = SeMCS.prescribed_state(model.G, obj.G{1}, true, ...
+                    options.PresetMode, options.PreserveStateFields);
             end
             sampler.BayStc = model;
 
             context = struct( ...
-                'owner', owner, ...
+                'owner', obj, ...
                 'model', model, ...
                 'sampler', sampler, ...
                 'limit', limit, ...
@@ -106,9 +93,98 @@ classdef SeMCS
                 'Nsze', zeros(0, 2), ...
                 'Ncal', [], ...
                 'complete', false);
-        end
+            if strcmp(options.OutputSchema, 'probability_product')
+                context.conditional_probabilities = [];
+            end
 
-        function out = pack_output(context)
+            for level = 1:limit
+                % SamGen: draw initial samples or continue the current chains.
+                if ismethod(context.model, 'sample_level')
+                    [context, record] = context.model.sample_level(context, level);
+                    context.g{level, 1} = context.model.G;
+                else
+                    if level == 1
+                        [x, y, calls, context.model] = context.sampler.SamGen(context.nc, context.steps);
+                    else
+                        [x, y, calls, context.model] = context.sampler.SamGen(context.xs, context.ys, context.steps);
+                    end
+                    record = struct( ...
+                        'x', x, ...
+                        'y', y, ...
+                        'calls', calls, ...
+                        'count', context.nc * context.steps, ...
+                        'shape', [context.nc, context.steps]);
+                end
+
+                context.x{level, 1} = record.x;
+                context.y{level, 1} = record.y;
+                context.Nsam(level, 1) = record.count;
+                context.Nsze(level, :) = record.shape;
+                context.Ncal(level, 1) = record.calls;
+
+                % UpdObj / update: retain each native numerical interface.
+                if options.UpdateOutputs == 1
+                    context.next = context.model.update(record.values, record.logpdf, obj.ConPrb);
+                    context.g{level + 1, 1} = context.next.G;
+                else
+                    if level + 1 <= numel(obj.G)
+                        context.model.G = SeMCS.prescribed_state(context.model.G, obj.G{level + 1}, false, ...
+                            options.PresetMode, options.PreserveStateFields);
+                        extra = 0;
+                    elseif options.UpdateOutputs == 2
+                        [~, context.model] = context.model.UpdObj(record.y, context.model.G.p);
+                        extra = 0;
+                    else
+                        [context.y{level}, ~, context.model, extra] = context.model.UpdObj(record.x, record.y, obj.ConPrb);
+                    end
+                    context.Ncal(level) = context.Ncal(level) + extra;
+                    context.g{level + 1, 1} = context.model.G;
+                    context.sampler.BayStc = context.model;
+                end
+
+                % This native domain update checks convergence before seeds.
+                if options.StopBeforeSeeds
+                    if context.next.converged()
+                        context.complete = true;
+                        break;
+                    elseif numel(context.x) == limit
+                        break;
+                    end
+                end
+
+                % SltSed / SedSlt / select_seeds: choose next-level seeds.
+                if ismethod(context.model, 'select_run_seeds')
+                    context = context.model.select_run_seeds(context, record, level);
+                else
+                    if targets(level + 1) <= 0
+                        error('SeMCS:ScheduleExhausted', 'Sample budget exhausted before seed selection.');
+                    end
+                    target = targets(level + 1);
+                    if strcmp(options.SeedFunction, 'SltSed')
+                        [context.xs, context.ys] = context.model.SltSed(record.x, context.y{level}, target);
+                    else
+                        [context.xs, context.ys] = SedSlt(context.model, record.x, context.y{level}, target);
+                    end
+                    context.nc = size(context.xs, 2);
+                    context.steps = round(target / context.nc);
+                    if obj.Verbose
+                        fprintf('Level %d: N=%d, chains=%d, steps=%d, calls=%d\n', ...
+                            level, record.count, record.shape(1), record.shape(2), context.Ncal(level));
+                    end
+                end
+                context.sampler.BayStc = context.model;
+
+                if ~options.StopBeforeSeeds
+                    if context.nc <= 0 || numel(context.x) == limit
+                        break;
+                    end
+                    context.complete = context.model.FlgCvg;
+                    if context.complete
+                        break;
+                    end
+                end
+            end
+
             out = struct( ...
                 'x', {context.x}, ...
                 'y', {context.y}, ...
@@ -119,9 +195,19 @@ classdef SeMCS
                 'Nite', numel(context.x), ...
                 'flg_cvg', context.complete, ...
                 'intBay', context.model);
+            if strcmp(options.OutputSchema, 'probability_product')
+                out.conditional_probabilities = context.conditional_probabilities;
+                out.sampler = class(context.sampler);
+                out.profile = context.model.profile;
+            end
         end
+    end
 
-        function next = prescribed_state(old, preset, initial, mode)
+    methods (Static)
+        function next = prescribed_state(old, preset, initial, mode, retained)
+            if nargin < 5
+                retained = {};
+            end
             if ~isstruct(preset)
                 next = old;
                 next.parameters = preset;
@@ -131,7 +217,7 @@ classdef SeMCS
                 next = SeMCS.overlay(old, preset);
             end
 
-            % Preserve adapted values when applying a parameter schedule.
+            % Keep the actually adapted proposal values in later schedules.
             if ~initial
                 for key = {'lambda', 'HMC_time'}
                     name = key{1};
@@ -140,13 +226,19 @@ classdef SeMCS
                     end
                 end
             end
+
+            for key = retained
+                name = key{1};
+                if ~isfield(next, name)
+                    next.(name) = old.(name);
+                end
+            end
         end
 
         function result = overlay(result, patch)
             for key = fieldnames(patch)'
                 name = key{1};
                 value = patch.(name);
-
                 if isfield(result, name) && isstruct(result.(name)) && isstruct(value)
                     result.(name) = SeMCS.overlay(result.(name), value);
                 else

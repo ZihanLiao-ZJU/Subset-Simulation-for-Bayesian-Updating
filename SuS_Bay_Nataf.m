@@ -1,6 +1,10 @@
 classdef SuS_Bay_Nataf
     % Subset simulation with Nataf transformation for Bayesian updating
 
+    properties (Constant)
+        RunOptions = struct('UpdateOutputs', 2, 'PresetMode', 'overlay', 'MinimumLevels', 1, 'SeedFunction', 'SltSed')
+    end
+
     properties
         % LKF     : Likelihood function object (must implement EvlLKF and Pdis.U2X)
         % Nfun    : Number of outputs per sample (default: 4)
@@ -169,69 +173,6 @@ classdef SuS_Bay_Nataf
             if isfield(spec.options, kernel)
                 options = spec.options.(kernel);
             end
-        end
-
-        function defaults = run_defaults(obj)
-            defaults = struct('NumSam', 1000, 'ConPrb', 0.1, 'MaxIte', 10000, 'Verbose', true);
-            if isprop(obj, 'Nsam')
-                defaults.NumSam = obj.Nsam;
-            end
-
-            if isfield(obj.G, 'p')
-                defaults.ConPrb = obj.G.p;
-            end
-        end
-
-        function context = start_run(~, owner, sampler)
-            owner.IntBay.G.p = owner.ConPrb;
-            context = SeMCS.start_context(owner, sampler, max(1, owner.MaxIte - 1), 'overlay');
-        end
-
-        function context = advance_level(~, context, record, level)
-            if level + 1 <= numel(context.owner.G)
-                context.model.G = SeMCS.prescribed_state(context.model.G, context.owner.G{level+1}, false, 'overlay');
-                extra = 0;
-            else
-                [~, context.model] = context.model.UpdObj(record.y, context.model.G.p);
-                extra = 0;
-            end
-
-            context.Ncal(level) = context.Ncal(level) + extra;
-            context.g{level+1, 1} = context.model.G;
-            context.sampler.BayStc = context.model;
-        end
-
-        function context = select_run_seeds(~, context, record, level)
-            if context.targets(level + 1) <= 0
-                error('SeMCS:ScheduleExhausted', 'Sample budget exhausted before seed selection.');
-            end
-
-            target = context.targets(level + 1);
-            [context.xs, context.ys] = context.model.SltSed(record.x, context.y{level}, target);
-            context.nc = size(context.xs, 2);
-            context.steps = round(target / context.nc);
-            if context.owner.Verbose
-                fprintf('Level %d: N=%d, chains=%d, steps=%d, calls=%d\n', level, record.count, record.shape(1), record.shape(2), context.Ncal(level));
-            end
-        end
-
-        function [yes, context] = run_complete(~, context, ~, phase)
-            yes = false;
-            if ~strcmp(phase, 'after_seeds')
-                return;
-            end
-
-            if context.nc <= 0 || numel(context.x) == context.limit
-                yes = true;
-                return;
-            end
-
-            context.complete = context.model.FlgCvg;
-            yes = context.complete;
-        end
-
-        function out = finish_run(~, context)
-            out = SeMCS.pack_output(context);
         end
 
     end

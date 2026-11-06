@@ -19,16 +19,15 @@ classdef ES < MCMCBase
 
         function [u, y, Ncal, b] = SamGen(obj, varargin)
             [b, u0, y0, Ncal, save, L, Nc, Ns] = obj.prepare(varargin{:});
-            opts = obj.configuration_options();
-            coordinate = strcmp(opts.ESMode, 'coordinate');
-            coordinate2pi = strcmp(opts.ESMode, 'coordinate_2pi');
-            assert(coordinate || coordinate2pi || strcmp(opts.ESMode, 'global'), 'ES:Mode', 'Choose coordinate, coordinate_2pi or global');
+            coordinate = strcmp(obj.ESMode, 'coordinate');
+            coordinate2pi = strcmp(obj.ESMode, 'coordinate_2pi');
+            assert(coordinate || coordinate2pi || strcmp(obj.ESMode, 'global'), 'ES:Mode', 'Choose coordinate, coordinate_2pi or global');
             if coordinate || coordinate2pi
-                validateattributes(opts.Ntry, {'numeric'}, {'scalar', 'integer', 'positive', 'finite'});
+                validateattributes(obj.Ntry, {'numeric'}, {'scalar', 'integer', 'positive', 'finite'});
             end
 
             d = b.Ndim;
-            z0 = obj.to_reference(b, u0, L, opts);
+            z0 = obj.to_reference(b, u0, L);
             u = zeros(d, Nc, Ns);
             y = zeros(b.Nfun, Nc, Ns);
             v = randn(d, Nc, Ns);
@@ -53,7 +52,7 @@ classdef ES < MCMCBase
 
                     while ~isempty(ids)
                         proposed = z0(:, ids) .* cos(angle) + v(:, ids, k) .* sin(angle);
-                        proposal = obj.from_reference(b, proposed, L, opts);
+                        proposal = obj.from_reference(b, proposed, L);
                         [b, yp, nn] = obj.evaluate(b, proposal);
                         Ncal = Ncal + nn;
                         rej = obj.reject(yp(1,:), y0(1, ids), p(1, ids, k));
@@ -82,7 +81,7 @@ classdef ES < MCMCBase
                 end
 
                 if coordinate2pi
-                    assert(strcmp(opts.SeedUpdateMode, 'each_step'), 'ES:SeedUpdate', 'coordinate_2pi requires each_step');
+                    assert(strcmp(obj.SeedUpdateMode, 'each_step'), 'ES:SeedUpdate', 'coordinate_2pi requires each_step');
                     ids = 1:Nc;
                     lo = zeros(d, Nc);
                     hi = 2 * pi * ones(d, Nc);
@@ -90,10 +89,10 @@ classdef ES < MCMCBase
                     u(:,:, k) = u0;
                     y(:,:, k) = y0;
 
-                    for j = 1:opts.Ntry
+                    for j = 1:obj.Ntry
                         angle = rand(d, numel(ids)) .* (hi - lo) + lo;
                         proposed = cos(angle) .* z0(:, ids) + sin(angle) .* v(:, ids, k);
-                        proposal = obj.from_reference(b, proposed, L, opts);
+                        proposal = obj.from_reference(b, proposed, L);
                         [b, yp, nn] = obj.evaluate(b, proposal);
                         Ncal = Ncal + nn;
                         rej = obj.reject(yp(1,:), y0(1, ids), p(1, ids, k));
@@ -138,10 +137,10 @@ classdef ES < MCMCBase
                 u(:,:, k) = u0;
                 y(:,:, k) = y0;
 
-                for j = 1:opts.Ntry
+                for j = 1:obj.Ntry
                     angle = lo + (hi - lo) .* rand(d, numel(ids));
                     proposed = cos(angle) .* R(:, ids);
-                    proposal = obj.from_reference(b, proposed, L, opts);
+                    proposal = obj.from_reference(b, proposed, L);
                     [b, yp, nn] = obj.evaluate(b, proposal);
                     Ncal = Ncal + nn;
                     rej = obj.reject(yp(1,:), y0(1, ids), p(1, ids, k));
@@ -163,7 +162,7 @@ classdef ES < MCMCBase
                     hi(upper) = angle(upper);
                 end
 
-                if strcmp(opts.SeedUpdateMode, 'each_step') || all_accepted
+                if strcmp(obj.SeedUpdateMode, 'each_step') || all_accepted
                     z0 = z;
                     u0 = u(:,:, k);
                     y0 = y(:,:, k);
