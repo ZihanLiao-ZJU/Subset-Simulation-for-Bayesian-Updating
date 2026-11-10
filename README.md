@@ -2,8 +2,7 @@
 
 MATLAB implementation of subset simulation (SuS) for Bayesian evidence estimation and posterior sampling, using a Nataf transformation to work in standard normal space. This code accompanies the paper:
 
-> **From likelihood to limit state: A reliability-inspired framework for Bayesian evidence estimation and high-dimensional sampling.**
-> *Mechanical Systems and Signal Processing*, 237 (2025) 112969. doi: [10.1016/j.ymssp.2025.112969](https://doi.org/10.1016/j.ymssp.2025.112969)
+> Liao, Z., Li, B., & Wan, H.-P. (2025). From likelihood to limit state: A reliability-inspired framework for Bayesian evidence estimation and high-dimensional sampling. *Mechanical Systems and Signal Processing, 237*, Article 112969. [https://doi.org/10.1016/j.ymssp.2025.112969](https://doi.org/10.1016/j.ymssp.2025.112969)
 
 ## Contents
 
@@ -179,9 +178,9 @@ During each run, the progress of every level is printed (sample size, number of 
 
 ## Citation
 
-If you use this code in your research, please cite:
+If you use this toolbox in your research, please cite:
 
-> Liao, Z., Li, B., & Wan, H.-P. (2025). From likelihood to limit state: A reliability-inspired framework for Bayesian evidence estimation and high-dimensional sampling. *Mechanical Systems and Signal Processing*, 237, 112969. https://doi.org/10.1016/j.ymssp.2025.112969
+> Liao, Z., Li, B., & Wan, H.-P. (2025). From likelihood to limit state: A reliability-inspired framework for Bayesian evidence estimation and high-dimensional sampling. *Mechanical Systems and Signal Processing, 237*, Article 112969. [https://doi.org/10.1016/j.ymssp.2025.112969](https://doi.org/10.1016/j.ymssp.2025.112969)
 
 ```bibtex
 @article{liao2025likelihood,
