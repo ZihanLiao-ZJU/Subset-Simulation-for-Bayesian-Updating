@@ -44,7 +44,7 @@ The Bayesian updating problem is reformulated in the spirit of a structural reli
 
 ## Common sequential sampling interface
 
-All five MATLAB toolboxes include the same `SeMCS.m`: construct `simulation = SeMCS(sampler)`, set `NumSam`, `ConPrb`, `MaxIte`, and `Verbose`, then call `raw = simulation.RunIte()`. The model in `sampler.BayStc` supplies initialization, level updates, seed selection, and the order of its original stopping checks. The framework stores `x`, `y`, and the evolving distribution states `g`; the estimator processes this history separately.
+All five MATLAB toolboxes include the same `SeMCS.m`: choose a sampler, construct `simulation = SeMCS(sampler)`, set a constant `simulation.NumSam`, then call `raw = simulation.RunIte()`. The model in `sampler.BayStc` supplies initialization, level updates, seed selection, and the order of its original stopping checks. The framework stores `x`, `y`, and the evolving distribution states `g`; the estimator processes this history separately.
 
 Fixed MCMC settings, including initial step sizes, acceptance targets, adaptation-group counts and ES options, are properties of the sampler. Values that evolve, such as the adapted `lambda` and HMC trajectory time, are stored in the model's `G`. Different toolboxes retain their own numerical settings. `G.active` carries GSuS's evolving active-response mask together with each historical distribution state.
 
@@ -79,22 +79,19 @@ Fixed MCMC settings, including initial step sizes, acceptance targets, adaptatio
 
 ## Quick start
 
-Set `MaxIte` to the maximum number of sampled levels. A scalar `NumSam` is reused; a vector is a finite per-level budget. The run returns when either limit is reached, and `flg_cvg` reports the method's own convergence criterion. Entries in `G` patch intermediate states; omitted fields and carried `lambda`/`HMC_time` are retained.
+Choose `drive_evidence.m` for evidence estimation or `drive_posterior.m` for posterior sampling. Edit the existing assignments inside the chosen script:
 
-1. Add the repository and all its subfolders to the MATLAB path, for example from the repository root:
+1. Select `Tfun` and `Ndim`. Both drivers default to `LKF_nD_GaussianShells(Ndim)`; `Ndim` is 5 for evidence and 2 for posterior sampling.
+2. Set the constant `Nsam = 1000`, which the driver assigns to `ss.NumSam` for every level.
+3. Choose `SamplerClass = @aCS` (the default), or `@CW_aMH`, `@ES` or `@HMC`.
 
-   ```matlab
-   >> addpath(genpath(pwd))
-   ```
+For a single run, set the chosen script's existing `Nrun` to 1. From the repository root, run that script; it adds the subfolders itself:
 
-2. Run one of the drivers:
+```matlab
+drive_evidence
+```
 
-   ```matlab
-   >> drive_evidence    % Bayesian evidence estimation
-   >> drive_posterior   % posterior sampling
-   ```
-
-Both drivers use 1000 samples per level. `drive_evidence` runs 500 repetitions with `Ndim = 5`, and `drive_posterior` runs 5 repetitions with `Ndim = 2`. To change the problem, edit `Ndim` and the `Tfun = ...` line in the *Define Likelihood Function* section of the driver.
+Use `drive_posterior` instead for posterior sampling. Without editing `Nrun`, `drive_evidence` runs 500 repetitions and `drive_posterior` runs 5. Use multiple runs for repeat-based statistics.
 
 ## Built-in examples
 
