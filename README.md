@@ -7,7 +7,6 @@ MATLAB implementation of subset simulation (SuS) for Bayesian evidence estimatio
 ## Contents
 
 - [Overview](#overview)
-- [Common sequential sampling interface](#common-sequential-sampling-interface)
 - [Requirements](#requirements)
 - [Repository structure](#repository-structure)
 - [Quick start](#quick-start)
@@ -42,12 +41,6 @@ The Bayesian updating problem is reformulated in the spirit of a structural reli
 - estimate the log-evidence, together with its coefficient of variation (CoV), with a correction for the correlation of Markov chain samples, and
 - obtain posterior samples by resampling.
 
-## Common sequential sampling interface
-
-All five MATLAB toolboxes include the same `SeMCS.m`: choose a sampler, construct `simulation = SeMCS(sampler)`, set a constant `simulation.NumSam`, then call `raw = simulation.RunIte()`. The model in `sampler.BayStc` supplies initialization, level updates, seed selection, and the order of its original stopping checks. The framework stores `x`, `y`, and the evolving distribution states `g`; the estimator processes this history separately.
-
-Fixed MCMC settings, including initial step sizes, acceptance targets, adaptation-group counts and ES options, are properties of the sampler. Values that evolve, such as the adapted `lambda` and HMC trajectory time, are stored in the model's `G`. Different toolboxes retain their own numerical settings. `G.active` carries GSuS's evolving active-response mask together with each historical distribution state.
-
 ## Requirements
 
 - MATLAB
@@ -60,16 +53,16 @@ Fixed MCMC settings, including initial step sizes, acceptance targets, adaptatio
 ├── drive_evidence.m                     % driver: log-evidence estimation over repeated runs
 ├── drive_posterior.m                    % driver: posterior sampling and effective sample size
 ├── SuS_Bay_Nataf.m                      % core: subset simulation for Bayesian updating (intermediate levels, seeds, convergence)
-├── SeMCS.m                              % common sequential sampling loop and G-backed run settings
+├── SeMCS.m                              % sequential sampling loop
 ├── NumSim.m                             % post-processing: evidence, posterior resampling, CoV estimates
 ├── Nataf.m                              % Nataf transformation between physical and standard normal space
-├── MCMC-samplers/                      % common aCS, CW_aMH, HMC, ES and MCMCBase implementations
+├── MCMC-samplers/                      % aCS, CW_aMH, HMC, ES and sampler base class
 │   ├── aCS.m                            % adaptive conditional sampling
 │   ├── CW_aMH.m                         % component-wise adaptive Metropolis
 │   ├── HMC.m                            % Hamiltonian Monte Carlo
 │   ├── ES.m                             % elliptical slice sampling
-│   ├── MCMCBase.m                       % shared target evaluation and fixed sampler configuration
-│   └── LICENSE                          % shared implementation license
+│   ├── MCMCBase.m                       % target evaluation and sampler settings
+│   └── LICENSE                          % sampler license
 ├── Likelihood-functions/                % benchmark likelihoods
 ├── support functions/                   % thresholds, weights, CoV correction, plotting and other helpers
 ├── Operations on Logarithmic values/    % log-domain arithmetic (logsum, logplus, logmean, ...)
