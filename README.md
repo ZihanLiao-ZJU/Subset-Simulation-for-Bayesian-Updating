@@ -72,19 +72,20 @@ The Bayesian updating problem is reformulated in the spirit of a structural reli
 
 ## Quick start
 
-Choose `drive_evidence.m` for evidence estimation or `drive_posterior.m` for posterior sampling. Edit the existing assignments inside the chosen script:
+Edit `Tfun`, `Ndim`, `Nsam`, `Nrun` and `SamplerClass` inside `drive_evidence.m` or `drive_posterior.m`. Select `SamplerClass = @aCS` (the default), or choose another supplied sampler: `CW_aMH`, `aCS`, `HMC` or `ES`.
 
-1. Select `Tfun` and `Ndim`. Both drivers default to `LKF_nD_GaussianShells(Ndim)`; `Ndim` is 5 for evidence and 2 for posterior sampling.
-2. Set the constant `Nsam = 1000`, which the driver assigns to `ss.NumSam` for every level.
-3. Choose `SamplerClass = @aCS` (the default), or `@CW_aMH`, `@ES` or `@HMC`.
+Both scripts use `LKF_nD_GaussianShells` and 1000 samples per level. Evidence estimation defaults to dimension 5 and 500 runs; posterior sampling defaults to dimension 2 and 5 runs. For a single run, set `Nrun = 1` inside the script.
 
-For a single run, set the chosen script's existing `Nrun` to 1. From the repository root, run that script; it adds the subfolders itself:
+Run the chosen script from the repository root:
 
 ```matlab
 drive_evidence
+drive_posterior
 ```
 
-Use `drive_posterior` instead for posterior sampling. Without editing `Nrun`, `drive_evidence` runs 500 repetitions and `drive_posterior` runs 5. Use multiple runs for repeat-based statistics.
+Use `drive_evidence` for evidence estimation or `drive_posterior` for posterior sampling.
+
+Use multiple runs to estimate statistics across independent runs.
 
 ## Built-in examples
 
