@@ -1,7 +1,6 @@
 %% Initialization and Settings
 % Select CW_aMH, aCS, HMC, or ES; the original default is aCS.
 SamplerClass = @aCS;
-addpath(genpath(fileparts(mfilename('fullpath'))));
 
 % Simulation settings
 Nsam = 1000;         % Number of samples per iteration

@@ -61,6 +61,7 @@ classdef SeMCS
             nc = targets(1);
             steps = 1;
             flg_cvg = false;
+            reason = 'max_iterations';
 
             for ite = 1:maxi
                 % 1. Sample the current ISD and retain the actual chain shape.
@@ -86,30 +87,43 @@ classdef SeMCS
 
                 % A completed ReSuS domain needs no seeds; ordinary methods
                 % retain their native stop after the seed operation.
-                if ite == maxi || (stop_before_seeds && intBay.FlgCvg)
+                if stop_before_seeds && intBay.FlgCvg
+                    flg_cvg = true;
+                    reason = 'isd_complete';
+                    break;
+                end
+                if ite == maxi
                     flg_cvg = intBay.FlgCvg;
+                    if flg_cvg
+                        reason = 'method_complete';
+                    elseif ~isscalar(obj.NumSam) && ite == numel(obj.NumSam)
+                        reason = 'sample_budget';
+                    end
                     break;
                 end
 
                 % 3. The native method chooses seeds; there is no seed router.
                 [x_seed, y_seed] = SedSlt(intBay, x{ite}, y{ite}, targets(ite + 1));
                 nc = size(x_seed, 2);
+                flg_cvg = intBay.FlgCvg;
+                if flg_cvg
+                    reason = 'method_complete';
+                    break;
+                elseif nc == 0
+                    reason = 'empty_support';
+                    break;
+                end
                 steps = round(targets(ite + 1) / nc);
                 if obj.Verbose
                     fprintf('Level %d: N=%d, chains=%d, steps=%d, calls=%d\n', ...
                         ite, Nsam(ite), Nsze(ite, 1), Nsze(ite, 2), Ncal(ite));
                 end
-                flg_cvg = intBay.FlgCvg;
-                if flg_cvg || nc <= 0
-                    break;
-                end
-                sampler.BayStc = intBay;
             end
 
             % g{1:Nite} are sampled states; g{Nite+1} is the last candidate.
             out = struct('x', {x}, 'y', {y}, 'g', {g}, ...
                 'Nsam', Nsam, 'Nsze', Nsze, 'Ncal', Ncal, ...
-                'Nite', numel(x), 'flg_cvg', flg_cvg, ...
+                'Nite', numel(x), 'flg_cvg', flg_cvg, 'stop_reason', reason, ...
                 'intBay', intBay, 'sampler', class(sampler));
         end
     end

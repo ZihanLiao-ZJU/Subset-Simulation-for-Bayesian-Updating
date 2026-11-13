@@ -72,6 +72,8 @@ The Bayesian updating problem is reformulated in the spirit of a structural reli
 
 ## Quick start
 
+Add this repository and all its subfolders to the MATLAB path before running the script.
+
 Edit `Tfun`, `Ndim`, `Nsam`, `Nrun` and `SamplerClass` inside `drive_evidence.m` or `drive_posterior.m`. Select `SamplerClass = @aCS` (the default), or choose another supplied sampler: `CW_aMH`, `aCS`, `HMC` or `ES`.
 
 Both scripts use `LKF_nD_GaussianShells` and 1000 samples per level. Evidence estimation defaults to dimension 5 and 500 runs; posterior sampling defaults to dimension 2 and 5 runs. For a single run, set `Nrun = 1` inside the script.
